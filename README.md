@@ -1,6 +1,6 @@
 # Mantis
 
-![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Runtime](https://img.shields.io/badge/runtime-Bun_1.2-black)
 ![Chain](https://img.shields.io/badge/chain-Solana-9945FF)
 
@@ -107,4 +107,4 @@ Decisions pass through six checks in order before any on-chain action:
 
 ## License
 
-AGPL-3.0. If you build on this, your changes stay open.
+  ▎ MIT. Use it however you want.
