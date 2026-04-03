@@ -53,3 +53,4 @@ function loadConfig(): Config {
 }
 
 export const config = loadConfig();
+
