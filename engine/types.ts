@@ -127,3 +127,4 @@ export interface BacktestResult {
   winRate: number;
   sharpeRatio: number;
 }
+
