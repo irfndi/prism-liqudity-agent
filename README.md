@@ -108,3 +108,4 @@ Decisions pass through six checks in order before any on-chain action:
 ## License
 
   ▎ MIT. Use it however you want.
+
