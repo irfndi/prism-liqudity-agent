@@ -43,3 +43,4 @@ bun run lint         # TypeScript type check
 ## Adding a pool to watch
 
 Add its address to `WATCHLIST_POOLS` in `.env` (comma-separated).
+
