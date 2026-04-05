@@ -101,12 +101,33 @@ export class AgentMemory {
     const docs = results.documents[0] ?? [];
     const metas = results.metadatas[0] ?? [];
 
-    for (let i = 0; i < ids.length; i++) {
+    // Rerank by blending cosine similarity with a recency score.
+    // Chroma returns results sorted by distance (ascending). For patterns where
+    // two entries have similar distances, a more recent entry is more actionable —
+    // a pool that behaved badly 85 days ago matters less than the same signal 3 days ago.
+    // Recency score: exp(-age / 30-day half-life). Blended = 0.7 * sim + 0.3 * recency.
+    const RECENCY_HALFLIFE_MS = 30 * 24 * 60 * 60 * 1000;
+    const distances = results.distances?.[0] ?? [];
+
+    const ranked = ids
+      .map((id, i) => {
+        const meta = metas[i] as Record<string, unknown>;
+        const expiresAt = Number(meta["expiresAt"] ?? 0);
+        if (expiresAt < now) return null; // skip expired
+
+        const simScore = 1 - (distances[i] ?? 1);
+        const age = now - Number(meta["createdAt"] ?? 0);
+        const recencyScore = Math.exp(-age / RECENCY_HALFLIFE_MS);
+        const blended = simScore * 0.7 + recencyScore * 0.3;
+        return { i, blended };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => b.blended - a.blended);
+
+    for (const { i } of ranked) {
       const meta = metas[i] as Record<string, unknown>;
       const expiresAt = Number(meta["expiresAt"] ?? 0);
-      if (expiresAt < now) continue; // skip expired
 
-      entries.push({
         id: String(ids[i]),
         category: String(meta["category"] ?? "outcome") as MemoryCategory,
         content: String(docs[i] ?? ""),
