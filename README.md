@@ -95,11 +95,55 @@ Decisions pass through six checks in order before any on-chain action:
 
 ---
 
+## Technical Spec
+
+### IL Estimation — DLMM Bin Step Math
+
+The fee/IL ratio uses the actual bin step to convert drift distance into a price ratio, then applies the standard CPMM IL formula:
+
+```
+priceRatio r = (1 + binStep/10_000)^binsDrifted
+IL fraction  = 2√r / (1 + r) − 1
+```
+
+Prior approach multiplied drift ratio by a flat 0.2% coefficient, which underestimated IL on high-step pools (binStep 25+) and overestimated on tight-step pairs (binStep 1). The `binStep` value is read directly from `lbPair.binStep` via the `@meteora-ag/dlmm` SDK and passed through to the strategy.
+
+### Bin Utilization Filter
+
+`MIN_BIN_UTILIZATION` (default 0.30) blocks pools where fewer than 30% of fetched bins have non-zero reserves. One-sided pools where liquidity has clustered into a narrow band violate the distribution assumption used in the IL model. The check runs in `passesPreFilter` before any API call or agent invocation.
+
+### Memory Merge Threshold
+
+ChromaDB returns **cosine distance** (0 = identical, 2 = maximally dissimilar). The merge guard checks `distance < 1 − SIMILARITY_MERGE_THRESHOLD`. The threshold is set to 0.92, meaning `distance < 0.08` — near-duplicate observations only. Prior value of 0.70 was being used as if it were distance (wrong direction), merging entries with similarity as low as 30%.
+
+### Recency-Weighted Memory Retrieval
+
+`getRelevantContext` blends cosine similarity with a recency score:
+
+```typescript
+const recencyScore = Math.exp(-age / RECENCY_HALFLIFE_MS); // 30-day half-life
+blended = simScore * 0.7 + recencyScore * 0.3
+```
+
+A 90-day-old warning scores 0.05 on the recency term vs 0.33 for a 30-day-old entry at identical cosine similarity — recent signals take precedence without discarding older ones entirely.
+
+### Risk Gate Checks (in order)
+
+1. Confidence below `CONFIDENCE_THRESHOLD` → reject
+2. Max concurrent positions reached → reject ENTER
+3. **Duplicate pool guard** → reject ENTER if same pool already held (use REBALANCE instead)
+4. Portfolio drawdown > 10% → pause new entries
+5. Position size > 30% of portfolio → cap and allow
+6. Rebalance range > `MAX_REBALANCE_RANGE_BINS` → reject REBALANCE
+7. EXIT → always approved
+
+---
+
 ## Stack
 
 - **Runtime**: Bun 1.2
 - **Agent**: Claude Agent SDK (`stop_reason === "tool_use"` loop)
-- **Memory**: ChromaDB + cosine similarity merge
+- **Memory**: ChromaDB, cosine distance merge threshold 0.08, 30-day recency decay
 - **On-chain**: `@meteora-ag/dlmm` SDK, Helius RPC, Meteora REST API
 - **Config**: Zod schema validation, hard exit on invalid env
 
