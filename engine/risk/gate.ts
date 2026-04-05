@@ -89,10 +89,11 @@ export class RiskEngine {
           reason: "Invalid rebalance range: upperBinId must be > lowerBinId",
         };
       }
-      if (newUpperBinId - newLowerBinId > 100) {
+      const rangeWidth = newUpperBinId - newLowerBinId;
+      if (rangeWidth > config.MAX_REBALANCE_RANGE_BINS) {
         return {
           approved: false,
-          reason: "Rebalance range too wide (> 100 bins) — too much capital at risk",
+          reason: `Rebalance range ${rangeWidth} bins exceeds MAX_REBALANCE_RANGE_BINS (${config.MAX_REBALANCE_RANGE_BINS}) — too much capital spread across inactive bins`,
         };
       }
     }
