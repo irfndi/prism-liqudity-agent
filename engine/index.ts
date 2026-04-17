@@ -34,7 +34,7 @@ Decision rules:
 - ENTER: new pool passes all quality gates AND portfolio has capacity
 
 Always set confidence as a genuine probability estimate, not 1.0.
-Be conservative — a HOLD is better than a bad REBALANCE.`;
+Be conservative - a HOLD is better than a bad REBALANCE.`;
 
 async function runAgentOnPool(
   poolAddress: string,
@@ -77,7 +77,6 @@ async function runAgentOnPool(
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
       for (const tb of toolBlocks) {
-        // Intercept the decision tool — do not execute on MCP
         if (tb.name === "meteora_decision") {
           const inp = tb.input as Record<string, unknown>;
           decision = {
@@ -127,7 +126,7 @@ async function main() {
   });
 
   if (config.WATCHLIST_POOLS.length === 0) {
-    log.warn("No pools in WATCHLIST_POOLS — set them in .env to begin scanning");
+    log.warn("No pools in WATCHLIST_POOLS - set them in .env to begin scanning");
   }
 
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
@@ -139,9 +138,12 @@ async function main() {
 
   await memory.initialize();
 
-  // Prune expired memories at startup
-  const pruned = await memory.pruneExpired();
-  if (pruned > 0) log.info("Pruned expired memories", { count: pruned });
+  try {
+    const pruned = await memory.pruneExpired();
+    if (pruned > 0) log.info("Pruned expired memories", { count: pruned });
+  } catch (err) {
+    log.warn("Initial memory prune failed", { err });
+  }
 
   const runScanCycle = async () => {
     const cycle: AgentCycle = {
@@ -155,6 +157,12 @@ async function main() {
     };
 
     log.info("Scan cycle started", { cycleId: cycle.cycleId });
+
+    if (config.WATCHLIST_POOLS.length === 0) {
+      log.info("Skipping scan cycle because no pools are configured");
+      cycle.completedAt = Date.now();
+      return;
+    }
 
     for (const poolAddress of config.WATCHLIST_POOLS) {
       try {
@@ -175,7 +183,6 @@ async function main() {
           reasoning: decision.reasoning.slice(0, 120),
         });
 
-        // Risk check
         const openPositions = Array.from(trackedPaperPositions.values()).map((p) => ({
           id: p.address,
           poolAddress: p.address,
@@ -242,8 +249,7 @@ async function main() {
             });
           }
         } else {
-          // Live execution would go here
-          log.warn("Live trading not yet implemented — set PAPER_TRADING=true");
+          log.warn("Live trading not yet implemented - set PAPER_TRADING=true");
         }
       } catch (err) {
         log.error("Error processing pool", { pool: poolAddress, err });
@@ -251,21 +257,64 @@ async function main() {
     }
 
     cycle.completedAt = Date.now();
-    const duration = ((cycle.completedAt - cycle.startedAt) / 1000).toFixed(1);
+    const durationMs = cycle.completedAt - cycle.startedAt;
+    const durationSec = (durationMs / 1000).toFixed(1);
     log.info("Scan cycle complete", {
       cycleId: cycle.cycleId,
       scanned: cycle.poolsScanned,
       actioned: cycle.poolsActioned,
-      durationSec: duration,
+      durationSec,
     });
+
+    if (durationMs > config.SCAN_INTERVAL_MS) {
+      log.warn("Scan cycle exceeded configured interval", {
+        cycleId: cycle.cycleId,
+        durationMs,
+        intervalMs: config.SCAN_INTERVAL_MS,
+      });
+    }
+
+    try {
+      const pruned = await memory.pruneExpired();
+      if (pruned > 0) {
+        log.info("Pruned expired memories after scan cycle", {
+          cycleId: cycle.cycleId,
+          count: pruned,
+        });
+      }
+    } catch (err) {
+      log.warn("Post-cycle memory prune failed", {
+        cycleId: cycle.cycleId,
+        err,
+      });
+    }
   };
 
-  // Run first cycle immediately
-  await runScanCycle();
+  let cycleInFlight = false;
+  let skippedCycles = 0;
 
-  // Then run on interval
+  const tick = async () => {
+    if (cycleInFlight) {
+      skippedCycles++;
+      log.warn("Skipping scan cycle because the previous cycle is still running", {
+        skippedCycles,
+      });
+      return;
+    }
+
+    cycleInFlight = true;
+    try {
+      await runScanCycle();
+    } finally {
+      cycleInFlight = false;
+    }
+  };
+
+  await tick();
   log.info(`Next scan in ${config.SCAN_INTERVAL_MS / 60000} minutes`);
-  setInterval(runScanCycle, config.SCAN_INTERVAL_MS);
+  setInterval(() => {
+    void tick();
+  }, config.SCAN_INTERVAL_MS);
 }
 
 main().catch((err) => {
