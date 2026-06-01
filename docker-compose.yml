@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  agent:
+    build: .
+    container_name: prism-agent
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - meteora-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: prism-chroma
+    restart: unless-stopped
+    volumes:
+      - chroma-data:/chroma/chroma
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meteora-net
+
+volumes:
+  chroma-data:
+
+networks:
+  meteora-net:
+    driver: bridge
+

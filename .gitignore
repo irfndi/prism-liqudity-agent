@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# Chroma data
+chroma-data/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+site/
+# Local env overrides
+.env.*.local
+
+# Test and TypeScript caches
+.vitest/
+*.tsbuildinfo
