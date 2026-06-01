@@ -15,13 +15,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",
+    "@clack/prompts": "^0.9.0",
     "@meteora-ag/dlmm": "^1.3.0",
     "@solana/web3.js": "^1.98.0",
-    "chromadb": "^1.9.0",
-    "zod": "^3.23.0",
-    "@clack/prompts": "^0.9.0",
     "chalk": "^5.3.0",
-    "dotenv": "^16.4.5"
+    "chromadb": "^1.9.0",
+    "chromadb-default-embed": "^2.14.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -31,9 +32,16 @@
     "bun-types": "latest"
   },
   "keywords": [
-    "solana", "meteora", "dlmm", "liquidity", "ai-agent",
-    "claude", "defi", "rebalancing", "autonomous", "mcp"
+    "solana",
+    "meteora",
+    "dlmm",
+    "liquidity",
+    "ai-agent",
+    "claude",
+    "defi",
+    "rebalancing",
+    "autonomous",
+    "mcp"
   ],
   "license": "AGPL-3.0"
 }
-

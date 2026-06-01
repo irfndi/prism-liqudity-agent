@@ -15,7 +15,7 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true
   },
-  "include": ["engine/**/*", "ops/**/*"],
+  "include": ["engine/**/*", "ops/**/*", "types/**/*"],
   "exclude": ["node_modules", "dist", "tests"]
 }
 

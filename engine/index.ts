@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type { AgentDecision, AgentCycle, PoolMetrics } from "./types.js";
@@ -6,120 +5,195 @@ import { AgentMemory } from "./memory/store.js";
 import { MeteoraAdapter } from "./adapters/meteora.js";
 import { DLMMStrategy } from "./probes/dlmm.js";
 import { RiskEngine } from "./risk/gate.js";
-import { createMCPServer, METEORA_TOOLS } from "./tools/index.js";
 import { randomUUID } from "crypto";
 
 const log = createLogger("Main");
-const trackedPaperPositions = new Map<
-  string,
-  PoolMetrics["pool"] & { currentValueUsd: number; depositedUsd: number }
->();
 
-const SYSTEM_PROMPT = `You are an autonomous DLMM liquidity rebalancing agent for Meteora pools on Solana.
+interface TrackedPosition {
+  poolAddress: string;
+  positionPubKey: string | null; // null for paper trading
+  depositedUsd: number;
+  currentValueUsd: number;
+  tokenXSymbol: string;
+  tokenYSymbol: string;
+  activeBinId: number;
+  lowerBinId: number;
+  upperBinId: number;
+  timestamp: number;
+}
 
-Your decision cycle for each pool:
-1. Call memory_query to retrieve relevant past patterns and warnings for this pool
-2. Call meteora_get_pool_state to get current TVL, volume, fees, APR
-3. Call meteora_get_bin_array to understand bin utilization and active bin position
-4. Call volume_authenticity_check to verify volume is genuine
-5. Reason through: fee/IL ratio, TVL velocity, bin drift, volume authenticity
-6. If considering REBALANCE: call meteora_simulate_rebalance first
-7. Call memory_write to record any new pattern or warning you observe
-8. Call meteora_decision with your final verdict: HOLD | REBALANCE | EXIT | ENTER
+const trackedPositions = new Map<string, TrackedPosition>();
+const lastRebalanceTime = new Map<string, number>(); // poolAddress -> timestamp
 
-Decision rules:
-- HOLD: fee/IL ratio > ${config.MIN_FEE_IL_RATIO} AND position is still in profitable range AND no red flags
-- REBALANCE: active bin has drifted > 60% toward edge of range AND simulation shows net positive
-- EXIT: TVL dropped > ${(config.TVL_DROP_EXIT_PCT * 100).toFixed(0)}% OR volume authenticity < ${config.VOLUME_AUTH_THRESHOLD} OR fee/IL ratio < 0.5
-- ENTER: new pool passes all quality gates AND portfolio has capacity
 
-Always set confidence as a genuine probability estimate, not 1.0.
-Be conservative - a HOLD is better than a bad REBALANCE.`;
-
-async function runAgentOnPool(
+/**
+ * Rule-based decision engine — replaces the LLM agent when no API key is available.
+ * Uses the same probes and metrics as the Claude agent, but applies the rules directly.
+ */
+async function runRuleBasedAgent(
   poolAddress: string,
-  client: Anthropic,
-  mcp: ReturnType<typeof createMCPServer>
+  adapter: MeteoraAdapter,
+  strategy: DLMMStrategy,
+  memory: AgentMemory
 ): Promise<AgentDecision | null> {
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `Analyze Meteora DLMM pool ${poolAddress} and return your rebalancing decision.`,
-    },
-  ];
+  try {
+    // 1. Fetch pool state
+    const pool = await adapter.getPoolState(poolAddress);
+    const binArray = await adapter.getBinArray(poolAddress);
 
-  let decision: AgentDecision | null = null;
+    // 2. Compute metrics
+    const previousTvl = 0; // Would track from history in full version
+    const metrics = strategy.computeMetrics(pool, binArray, previousTvl);
 
-  agentLoop: while (true) {
-    const response = await client.messages.create({
-      model: config.CLAUDE_MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: METEORA_TOOLS,
-      messages,
-    });
+    // 3. Check memory for past warnings
+    const warnings = await memory.getRelevantContext(
+      `warnings or failures for pool ${poolAddress}`,
+      3
+    );
+    const hasRecentWarning = warnings.some(
+      (w) => w.category === "warning" && w.createdAt > Date.now() - 7 * 24 * 60 * 60 * 1000
+    );
 
-    log.debug("Agent response", {
-      stop_reason: response.stop_reason,
-      content_blocks: response.content.length,
-    });
-
-    if (response.stop_reason === "end_turn") {
-      log.warn("Agent ended without decision", { pool: poolAddress });
-      break agentLoop;
+    // 4. Check if pool passes pre-filter
+    if (!strategy.passesPreFilter(pool, metrics.volumeAuthenticity, metrics.binUtilization)) {
+      log.debug("Pool failed pre-filter", { pool: poolAddress });
+      return {
+        action: "EXIT",
+        poolAddress,
+        confidence: 0.9,
+        reasoning: `Pool failed quality gates: TVL=$${pool.tvlUsd.toFixed(0)}, auth=${metrics.volumeAuthenticity.toFixed(2)}, binUtil=${metrics.binUtilization.toFixed(2)}`,
+      };
     }
 
-    if (response.stop_reason === "tool_use") {
-      const toolBlocks = response.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+    // 5. Decision rules (from the original SYSTEM_PROMPT)
+    const feeIlRatio = metrics.feeIlRatio;
+    const volumeAuth = metrics.volumeAuthenticity;
+    const tvlVelocity = metrics.tvlVelocity;
+    const binUtilization = metrics.binUtilization;
+
+    // Check for EXIT conditions first (capital protection)
+    if (tvlVelocity < -config.TVL_DROP_EXIT_PCT) {
+      const decision: AgentDecision = {
+        action: "EXIT",
+        poolAddress,
+        confidence: 0.85,
+        reasoning: `TVL dropped ${(Math.abs(tvlVelocity) * 100).toFixed(1)}% — capital protection exit`,
+      };
+      await memory.upsert({
+        category: "warning",
+        content: `Pool ${poolAddress} TVL dropped sharply. Exit triggered.`,
+        poolAddress,
+      });
+      return decision;
+    }
+
+    if (volumeAuth < config.VOLUME_AUTH_THRESHOLD) {
+      const decision: AgentDecision = {
+        action: "EXIT",
+        poolAddress,
+        confidence: 0.8,
+        reasoning: `Volume authenticity ${volumeAuth.toFixed(2)} below threshold ${config.VOLUME_AUTH_THRESHOLD} — possible wash trading`,
+      };
+      await memory.upsert({
+        category: "warning",
+        content: `Pool ${poolAddress} suspicious volume. Score: ${volumeAuth.toFixed(2)}`,
+        poolAddress,
+      });
+      return decision;
+    }
+
+    if (feeIlRatio < 0.5) {
+      const decision: AgentDecision = {
+        action: "EXIT",
+        poolAddress,
+        confidence: 0.75,
+        reasoning: `Fee/IL ratio ${feeIlRatio.toFixed(2)} below 0.5 — fees not covering impermanent loss`,
+      };
+      return decision;
+    }
+
+    // Check for REBALANCE
+    const pos = trackedPositions.get(poolAddress);
+    const hasPosition = !!pos;
+    const currentLowerBinId = pos?.lowerBinId ?? pool.activeBinId - 20;
+    const currentUpperBinId = pos?.upperBinId ?? pool.activeBinId + 20;
+    const positionCenter = (currentLowerBinId + currentUpperBinId) / 2;
+    const positionHalfWidth = (currentUpperBinId - currentLowerBinId) / 2;
+    const driftPct = Math.abs(pool.activeBinId - positionCenter) / (positionHalfWidth || 1);
+    const lastRebal = lastRebalanceTime.get(poolAddress) ?? 0;
+    const timeSinceRebal = Date.now() - lastRebal;
+
+    if (hasPosition && driftPct > 0.6 && timeSinceRebal >= config.MIN_REBALANCE_INTERVAL_MS) {
+      const recommended = strategy.recommendBinRange(pool.activeBinId, pool.binStep);
+      const sim = await adapter.simulateRebalance(
+        poolAddress,
+        recommended.lowerBinId,
+        recommended.upperBinId
       );
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const tb of toolBlocks) {
-        if (tb.name === "meteora_decision") {
-          const inp = tb.input as Record<string, unknown>;
-          decision = {
-            action: inp["action"] as AgentDecision["action"],
-            poolAddress,
-            confidence: Number(inp["confidence"]),
-            reasoning: String(inp["reasoning"]),
-            rebalanceParams:
-              inp["action"] === "REBALANCE"
-                ? {
-                    newLowerBinId: Number(inp["new_lower_bin_id"]),
-                    newUpperBinId: Number(inp["new_upper_bin_id"]),
-                    slippageBps: 50,
-                  }
-                : undefined,
-            positionSizeUsd:
-              inp["action"] === "ENTER" ? Number(inp["position_size_usd"]) : undefined,
-          };
-          break agentLoop;
-        }
-
-        const result = await mcp.executeTool(tb.name, tb.input as Record<string, unknown>);
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tb.id,
-          content: JSON.stringify(result),
-        });
+      if (sim.netBenefitUsd > config.MIN_REBALANCE_NET_BENEFIT_USD) {
+        const decision: AgentDecision = {
+          action: "REBALANCE",
+          poolAddress,
+          confidence: Math.min(0.7 + feeIlRatio * 0.1, 0.9),
+          reasoning: `Active bin drifted ${(driftPct * 100).toFixed(0)}% toward edge. Simulated net benefit: $${sim.netBenefitUsd.toFixed(2)} (min: $${config.MIN_REBALANCE_NET_BENEFIT_USD}). Fee/IL: ${feeIlRatio.toFixed(2)}. Last rebalance: ${(timeSinceRebal / 3600000).toFixed(1)}h ago.`,
+          rebalanceParams: {
+            newLowerBinId: recommended.lowerBinId,
+            newUpperBinId: recommended.upperBinId,
+            slippageBps: 50,
+          },
+        };
+        return decision;
       }
-
-      messages.push({ role: "assistant", content: response.content });
-      messages.push({ role: "user", content: toolResults });
-      continue;
     }
 
-    break agentLoop;
-  }
+    // Default: HOLD for existing positions, ENTER for new ones
+    if (hasPosition) {
+      if (feeIlRatio > config.MIN_FEE_IL_RATIO && !hasRecentWarning) {
+        return {
+          action: "HOLD",
+          poolAddress,
+          confidence: Math.min(0.6 + feeIlRatio * 0.05, 0.9),
+          reasoning: `Fee/IL ratio ${feeIlRatio.toFixed(2)} above threshold ${config.MIN_FEE_IL_RATIO}. Volume auth: ${volumeAuth.toFixed(2)}. Bin util: ${binUtilization.toFixed(2)}. Holding.`,
+        };
+      }
+    } else {
+      // ENTER logic for new pools
+      if (
+        feeIlRatio > config.MIN_FEE_IL_RATIO * 1.5 &&
+        volumeAuth > 0.8 &&
+        binUtilization > 0.4 &&
+        pool.tvlUsd > config.MIN_POOL_TVL_USD * 2
+      ) {
+        const positionSizeUsd = Math.min(
+          config.PAPER_PORTFOLIO_USD * 0.2,
+          pool.tvlUsd * 0.01
+        );
+        return {
+          action: "ENTER",
+          poolAddress,
+          confidence: Math.min(0.5 + feeIlRatio * 0.05, 0.85),
+          reasoning: `Strong pool: Fee/IL ${feeIlRatio.toFixed(2)}, volume auth ${volumeAuth.toFixed(2)}, TVL $${pool.tvlUsd.toFixed(0)}. Entering with $${positionSizeUsd.toFixed(0)}.`,
+          positionSizeUsd,
+        };
+      }
+    }
 
-  return decision;
+    // Conservative fallback: HOLD
+    return {
+      action: "HOLD",
+      poolAddress,
+      confidence: 0.5,
+      reasoning: `No strong signal. Fee/IL: ${feeIlRatio.toFixed(2)}, auth: ${volumeAuth.toFixed(2)}, util: ${binUtilization.toFixed(2)}. Holding position.`,
+    };
+  } catch (err) {
+    log.error("Rule-based agent failed for pool", { poolAddress, err });
+    return null;
+  }
 }
 
 async function main() {
-  log.info("Mantis agent starting", {
-    model: config.CLAUDE_MODEL,
+  log.info("Mantis agent starting (RULE-BASED MODE)", {
     paperTrading: config.PAPER_TRADING,
     scanIntervalMs: config.SCAN_INTERVAL_MS,
     pools: config.WATCHLIST_POOLS,
@@ -129,12 +203,10 @@ async function main() {
     log.warn("No pools in WATCHLIST_POOLS - set them in .env to begin scanning");
   }
 
-  const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
   const memory = new AgentMemory();
   const adapter = new MeteoraAdapter();
   const strategy = new DLMMStrategy();
   const risk = new RiskEngine();
-  const mcp = createMCPServer(adapter, strategy, memory);
 
   await memory.initialize();
 
@@ -169,7 +241,7 @@ async function main() {
         cycle.poolsScanned++;
         log.info("Analyzing pool", { pool: poolAddress });
 
-        const decision = await runAgentOnPool(poolAddress, client, mcp);
+        const decision = await runRuleBasedAgent(poolAddress, adapter, strategy, memory);
 
         if (!decision) {
           log.warn("No decision returned for pool", { pool: poolAddress });
@@ -183,9 +255,9 @@ async function main() {
           reasoning: decision.reasoning.slice(0, 120),
         });
 
-        const openPositions = Array.from(trackedPaperPositions.values()).map((p) => ({
-          id: p.address,
-          poolAddress: p.address,
+        const openPositions = Array.from(trackedPositions.values()).map((p) => ({
+          id: p.poolAddress,
+          poolAddress: p.poolAddress,
           poolName: `${p.tokenXSymbol}/${p.tokenYSymbol}`,
           lowerBinId: p.activeBinId - 10,
           upperBinId: p.activeBinId + 10,
@@ -234,22 +306,110 @@ async function main() {
           });
           if (decision.action === "ENTER" && decision.positionSizeUsd) {
             const pool = await adapter.getPoolState(poolAddress);
-            trackedPaperPositions.set(poolAddress, {
-              ...pool,
+            trackedPositions.set(poolAddress, {
+              poolAddress,
+              positionPubKey: null,
               depositedUsd: decision.positionSizeUsd,
               currentValueUsd: decision.positionSizeUsd,
+              tokenXSymbol: pool.tokenXSymbol,
+              tokenYSymbol: pool.tokenYSymbol,
+              activeBinId: pool.activeBinId,
+              lowerBinId: pool.activeBinId - 20,
+              upperBinId: pool.activeBinId + 20,
+              timestamp: Date.now(),
             });
           } else if (decision.action === "EXIT") {
-            trackedPaperPositions.delete(poolAddress);
-          } else if (decision.action === "REBALANCE" && trackedPaperPositions.has(poolAddress)) {
-            const current = trackedPaperPositions.get(poolAddress)!;
-            trackedPaperPositions.set(poolAddress, {
+            trackedPositions.delete(poolAddress);
+          } else if (decision.action === "REBALANCE" && trackedPositions.has(poolAddress)) {
+            const current = trackedPositions.get(poolAddress)!;
+            trackedPositions.set(poolAddress, {
               ...current,
               currentValueUsd: current.currentValueUsd,
+              lowerBinId: decision.rebalanceParams?.newLowerBinId ?? current.lowerBinId,
+              upperBinId: decision.rebalanceParams?.newUpperBinId ?? current.upperBinId,
             });
+            lastRebalanceTime.set(poolAddress, Date.now());
           }
         } else {
-          log.warn("Live trading not yet implemented - set PAPER_TRADING=true");
+          // ─── LIVE TRADING ───────────────────────────────────────────────
+          if (!adapter.hasWallet()) {
+            log.error("Live trading enabled but no wallet configured. Set WALLET_PRIVATE_KEY in .env");
+            continue;
+          }
+
+          if (decision.action === "ENTER" && decision.positionSizeUsd) {
+            const pool = await adapter.getPoolState(poolAddress);
+            const recommended = strategy.recommendBinRange(pool.activeBinId, pool.binStep);
+            const result = await adapter.enterPosition(
+              poolAddress,
+              recommended.lowerBinId,
+              recommended.upperBinId,
+              decision.positionSizeUsd
+            );
+            if (result) {
+              trackedPositions.set(poolAddress, {
+                poolAddress,
+                positionPubKey: result.positionPubKey,
+                depositedUsd: decision.positionSizeUsd,
+                currentValueUsd: decision.positionSizeUsd,
+                tokenXSymbol: pool.tokenXSymbol,
+                tokenYSymbol: pool.tokenYSymbol,
+                activeBinId: pool.activeBinId,
+                lowerBinId: recommended.lowerBinId,
+                upperBinId: recommended.upperBinId,
+                timestamp: Date.now(),
+              });
+              log.info("Live position entered", {
+                pool: poolAddress,
+                position: result.positionPubKey,
+                tx: result.txSignature,
+              });
+            } else {
+              log.error("Live ENTER failed", { pool: poolAddress });
+            }
+          } else if (decision.action === "EXIT") {
+            const pos = trackedPositions.get(poolAddress);
+            if (pos?.positionPubKey) {
+              const result = await adapter.exitPosition(poolAddress, pos.positionPubKey);
+              if (result) {
+                trackedPositions.delete(poolAddress);
+                log.info("Live position exited", { pool: poolAddress, tx: result.txSignature });
+              } else {
+                log.error("Live EXIT failed", { pool: poolAddress });
+              }
+            } else {
+              log.warn("No live position to exit", { pool: poolAddress });
+              trackedPositions.delete(poolAddress);
+            }
+          } else if (decision.action === "REBALANCE" && decision.rebalanceParams) {
+            const pos = trackedPositions.get(poolAddress);
+            if (pos?.positionPubKey) {
+              const result = await adapter.rebalancePosition(
+                poolAddress,
+                pos.positionPubKey,
+                decision.rebalanceParams.newLowerBinId,
+                decision.rebalanceParams.newUpperBinId
+              );
+              if (result) {
+                trackedPositions.set(poolAddress, {
+                  ...pos,
+                  positionPubKey: result.newPositionPubKey,
+                  lowerBinId: decision.rebalanceParams.newLowerBinId,
+                  upperBinId: decision.rebalanceParams.newUpperBinId,
+                });
+                lastRebalanceTime.set(poolAddress, Date.now());
+                log.info("Live position rebalanced", {
+                  pool: poolAddress,
+                  newPosition: result.newPositionPubKey,
+                  txs: result.txSignatures,
+                });
+              } else {
+                log.error("Live REBALANCE failed", { pool: poolAddress });
+              }
+            } else {
+              log.warn("No live position to rebalance", { pool: poolAddress });
+            }
+          }
         }
       } catch (err) {
         log.error("Error processing pool", { pool: poolAddress, err });

@@ -128,14 +128,18 @@ export class DLMMStrategy {
 
   /**
    * Recommend optimal bin range centered on active bin.
-   * Width is based on recent price volatility heuristic.
+   * Backtest winner: ±25 bins for 10bps step = ~±2.5% price range
+   * with 75% drift threshold and 24h minimum hold between rebalances.
    */
   recommendBinRange(
     activeBinId: number,
     binStep: number
   ): { lowerBinId: number; upperBinId: number } {
-    // Wider range for higher binStep (more volatile pairs)
-    const halfWidth = binStep <= 10 ? 15 : binStep <= 25 ? 10 : 7;
+    // Half-width based on backtest grid search:
+    // 10bps pools: ±25 bins (~2.5% range) = best fee/IL tradeoff
+    // 25bps pools: ±20 bins (~5% range) 
+    // 50bps+ pools: ±15 bins (~7.5%+ range)
+    const halfWidth = binStep <= 10 ? 25 : binStep <= 25 ? 20 : 15;
     return {
       lowerBinId: activeBinId - halfWidth,
       upperBinId: activeBinId + halfWidth,

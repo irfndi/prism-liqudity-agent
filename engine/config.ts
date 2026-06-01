@@ -4,10 +4,14 @@ import "dotenv/config";
 const TEST_ENV = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
 
 const ConfigSchema = z.object({
-  // APIs
-  ANTHROPIC_API_KEY: z.string().min(1),
-  HELIUS_API_KEY: z.string().min(1),
-  SOLANA_RPC_URL: z.string().url(),
+  // Wallet — required for live trading
+  WALLET_PRIVATE_KEY: z.string().default(""),
+
+  // APIs — optional for rule-based mode
+  ANTHROPIC_BASE_URL: z.string().url().default("https://api.anthropic.com"),
+  ANTHROPIC_API_KEY: z.string().default(""),
+  HELIUS_API_KEY: z.string().default(""),
+  SOLANA_RPC_URL: z.string().url().default("https://api.mainnet-beta.solana.com"),
 
   // Strategy
   PAPER_TRADING: z
@@ -20,6 +24,8 @@ const ConfigSchema = z.object({
   TVL_DROP_EXIT_PCT: z.coerce.number().min(0).max(1).default(0.3),
   VOLUME_AUTH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
   MAX_CONCURRENT_POSITIONS: z.coerce.number().min(1).default(5),
+  MIN_REBALANCE_INTERVAL_MS: z.coerce.number().min(0).default(24 * 60 * 60 * 1000), // 24h minimum between rebalances
+  MIN_REBALANCE_NET_BENEFIT_USD: z.coerce.number().min(0).default(10), // only rebalance if net benefit > $10
   CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
   PAPER_PORTFOLIO_USD: z.coerce.number().min(0).default(10000),
   // Pools with fewer than this fraction of bins holding liquidity tend to be illiquid
