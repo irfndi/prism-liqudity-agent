@@ -165,15 +165,22 @@ async function runRuleBasedAgent(
         binUtilization > 0.4 &&
         pool.tvlUsd > config.MIN_POOL_TVL_USD * 2
       ) {
-        const positionSizeUsd = Math.min(
-          config.PAPER_PORTFOLIO_USD * 0.2,
-          pool.tvlUsd * 0.01
+        // Use real wallet balance for position sizing in live mode
+        const walletBalanceUsd = adapter.hasWallet() 
+          ? await adapter.getWalletBalanceUsd() 
+          : config.PAPER_PORTFOLIO_USD;
+        const maxPositionSize = Math.min(
+          walletBalanceUsd * 0.5, // Use 50% of wallet max per position
+          pool.tvlUsd * 0.005,   // Max 0.5% of pool TVL
+          500                     // Hard cap at $500 per position
         );
+        const positionSizeUsd = Math.max(maxPositionSize, 10); // Minimum $10
+        
         return {
           action: "ENTER",
           poolAddress,
           confidence: Math.min(0.5 + feeIlRatio * 0.05, 0.85),
-          reasoning: `Strong pool: Fee/IL ${feeIlRatio.toFixed(2)}, volume auth ${volumeAuth.toFixed(2)}, TVL $${pool.tvlUsd.toFixed(0)}. Entering with $${positionSizeUsd.toFixed(0)}.`,
+          reasoning: `Strong pool: Fee/IL ${feeIlRatio.toFixed(2)}, volume auth ${volumeAuth.toFixed(2)}, TVL $${pool.tvlUsd.toFixed(0)}. Wallet $${walletBalanceUsd.toFixed(0)}. Entering with $${positionSizeUsd.toFixed(0)}.`,
           positionSizeUsd,
         };
       }

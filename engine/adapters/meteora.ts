@@ -32,6 +32,37 @@ export class MeteoraAdapter {
     return this.wallet?.publicKey.toBase58() ?? null;
   }
 
+  async getWalletBalanceUsd(): Promise<number> {
+    if (!this.wallet) return 0;
+    
+    try {
+      const solBal = await this.connection.getBalance(this.wallet.publicKey);
+      const solAmount = solBal / 1e9;
+      
+      // Hardcoded SOL price fallback (update via cron or price feed later)
+      const solPrice = 165; // ~$165/SOL
+      const solValue = solAmount * solPrice;
+      
+      // Check USDC
+      const usdcMint = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      const tokenAccounts = await this.connection.getTokenAccountsByOwner(
+        this.wallet.publicKey,
+        { mint: usdcMint }
+      );
+      
+      let usdcValue = 0;
+      if (tokenAccounts.value.length > 0 && tokenAccounts.value[0]) {
+        const bal = await this.connection.getTokenAccountBalance(tokenAccounts.value[0].pubkey);
+        usdcValue = bal.value.uiAmount ?? 0;
+      }
+      
+      return solValue + usdcValue;
+    } catch (err) {
+      log.error("Failed to get wallet balance", { err });
+      return 0;
+    }
+  }
+
   async getPoolState(poolAddress: string): Promise<PoolState> {
     try {
       const pubkey = new PublicKey(poolAddress);

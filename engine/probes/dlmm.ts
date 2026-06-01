@@ -120,7 +120,7 @@ export class DLMMStrategy {
     if (total === 0) return 0;
 
     const active = binArray.bins.filter(
-      (b) => b.reserveX > 0n || b.reserveY > 0n
+      (b) => b.reserveX > 0n || b.reserveY > 0n || b.liquiditySupply > 0n
     ).length;
 
     return active / total;
