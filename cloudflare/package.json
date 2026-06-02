@@ -16,12 +16,12 @@
     "hono": "^4.12.23"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.12",
     "@cloudflare/workers-types": "^4.20250214.0",
-    "@vitest/runner": "^3.2.0",
-    "@vitest/snapshot": "^3.2.0",
+    "@vitest/runner": "^4.1.0",
+    "@vitest/snapshot": "^4.1.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.0",
+    "vitest": "^4.1.0",
     "wrangler": "^4.96.0"
   }
 }
