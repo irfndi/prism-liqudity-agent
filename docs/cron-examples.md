@@ -4,22 +4,20 @@ Run Prism unattended on a schedule.
 
 ## Cron (Linux/macOS)
 
-> **Warning:** Cron jobs spawn a new process on each run. If `prism dev` is a long-running process, multiple instances may run concurrently. Prefer `systemd` or `launchd` for long-running agents.
-
 ### Every 10 minutes (default scan interval)
 
 ```bash
 # Edit crontab
 crontab -e
 
-# Add line (use flock to prevent overlapping runs):
-*/10 * * * * cd /path/to/prism-dlmm && flock -n /tmp/prism.lock prism dev >> /var/log/prism.log 2>&1
+# Add line:
+*/10 * * * * cd /path/to/prism-dlmm && bun run dev >> /var/log/prism.log 2>&1
 ```
 
 ### Every hour (conservative)
 
 ```bash
-0 * * * * cd /path/to/prism-dlmm && flock -n /tmp/prism.lock prism dev >> /var/log/prism.log 2>&1
+0 * * * * cd /path/to/prism-dlmm && bun run dev >> /var/log/prism.log 2>&1
 ```
 
 ### With log rotation
@@ -49,7 +47,8 @@ Create `~/Library/LaunchAgents/com.prism.dlmm.plist`:
     <string>com.prism.dlmm</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/prism</string>
+        <string>/usr/local/bin/bun</string>
+        <string>run</string>
         <string>dev</string>
     </array>
     <key>WorkingDirectory</key>
@@ -57,9 +56,9 @@ Create `~/Library/LaunchAgents/com.prism.dlmm.plist`:
     <key>StartInterval</key>
     <integer>600</integer>
     <key>StandardOutPath</key>
-    <string>~/Library/Logs/prism.log</string>
+    <string>/var/log/prism.log</string>
     <key>StandardErrorPath</key>
-    <string>~/Library/Logs/prism.error.log</string>
+    <string>/var/log/prism.error.log</string>
 </dict>
 </plist>
 ```
@@ -84,7 +83,7 @@ After=network.target
 Type=simple
 User=prism
 WorkingDirectory=/path/to/prism-dlmm
-ExecStart=/usr/local/bin/prism dev
+ExecStart=/usr/local/bin/bun run dev
 Restart=always
 RestartSec=600
 StandardOutput=append:/var/log/prism.log
@@ -109,7 +108,7 @@ FROM oven/bun:1.2
 WORKDIR /app
 COPY . .
 RUN bun install
-CMD ["prism", "dev"]
+CMD ["bun", "run", "dev"]
 ```
 
 ```bash
@@ -123,7 +122,7 @@ Check if the agent is running:
 
 ```bash
 # Cron
-ps aux | grep "prism dev"
+ps aux | grep "bun run dev"
 
 # Launchd
 launchctl list | grep com.prism.dlmm
