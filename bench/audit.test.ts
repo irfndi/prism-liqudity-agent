@@ -23,9 +23,11 @@ describe("AuditService", () => {
     return Layer.provide(AuditLive, DbLive(":memory:"));
   }
 
-  function makeRecord(overrides: Partial<{ action: string; confidence: number }> = {}) {
+  function makeRecord(
+    overrides: Partial<{ action: string; confidence: number; timestamp: number }> = {},
+  ) {
     return {
-      timestamp: Date.now(),
+      timestamp: overrides.timestamp ?? Date.now(),
       cycleId: "cycle-1",
       poolAddress: "Pool111111111111111111111111111111111111111",
       action: overrides.action ?? "ENTER",
@@ -68,8 +70,8 @@ describe("AuditService", () => {
       layer,
     );
 
-    run(api.recordDecision(makeRecord({ action: "ENTER" })), layer);
-    run(api.recordDecision(makeRecord({ action: "HOLD" })), layer);
+    run(api.recordDecision(makeRecord({ action: "ENTER", timestamp: 1 })), layer);
+    run(api.recordDecision(makeRecord({ action: "HOLD", timestamp: 2 })), layer);
 
     const recent = run(api.getRecentDecisions(10), layer);
     expect(recent).toHaveLength(2);

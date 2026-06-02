@@ -85,6 +85,6 @@ Decisions pass through checks in order before any on-chain action:
 - **Strategy**: Rule-based engine with DLMM probes
 - **Memory**: SQLite + sqlite-vec, cosine distance merge threshold 0.08, 30-day recency decay
 - **On-chain**: `@meteora-ag/dlmm` SDK, Helius RPC
-- **Config**: Zod schema validation, hard exit on invalid env
+- **Config**: Effect-TS Config module with `orElseSucceed` fallbacks; every value has a sensible default and test mode auto-injects dummy API keys
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full component map and agent loop.

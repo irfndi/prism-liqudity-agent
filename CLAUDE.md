@@ -34,7 +34,7 @@ Per-pool, `runRuleBasedAgent()` executes sequentially:
 
 Positions are persisted to SQLite via `DbService`. On startup, open positions are loaded from the database so the agent survives restarts without losing track of OOR positions.
 
-### Live Trading (`engine/adapters/meteora.ts`)
+### Live Trading (`engine/adapter-service.ts`)
 
 `MeteoraAdapter` wraps the `@meteora-ag/dlmm` SDK:
 
@@ -55,7 +55,7 @@ Positions are persisted to SQLite via `DbService`. On startup, open positions ar
 
 `getBinArray()` builds **synthetic bins** (prices only, zero reserves) because the DLMM SDK's `getBinsBetweenLowerAndUpperBound` crashes on many mainnet pools with sparse bin arrays. The bin step is read from `lbPair.binStep`.
 
-### Fee/IL Math (`engine/probes/dlmm.ts`)
+### Fee/IL Math (`engine/strategy-service.ts`)
 
 `computeFeeIlRatio()` uses the actual DLMM bin step to convert drift distance into a price ratio, then applies the standard CPMM IL formula:
 
@@ -103,17 +103,17 @@ Existing positions are revalued each cycle via `estimatePositionValue()` (bin-dr
 
 `estimatePositionValue(pos, pool)` roughly interpolates IL based on how far the active bin has drifted from the position range center: full value at center, 50% at the far edge.
 
-### Risk Gates (`engine/risk/gate.ts`)
+### Risk Gates (`engine/risk-service.ts`)
 
 Checks execute in order with early return:
 
-1. Confidence < `CONFIDENCE_THRESHOLD` → reject
-2. Max concurrent positions reached → reject ENTER
-3. **Duplicate pool guard** → reject ENTER if same pool already held (use REBALANCE instead)
-4. Portfolio drawdown > 10% → pause ENTER
-5. Position size > 30% portfolio → cap to 30% and approve
-6. Rebalance range inverted or > `MAX_REBALANCE_RANGE_BINS` → reject
-7. EXIT → always approved (capital protection)
+1. EXIT → always approved (capital protection)
+2. Confidence < `CONFIDENCE_THRESHOLD` → reject
+3. Max concurrent positions reached → reject ENTER
+4. **Duplicate pool guard** → reject ENTER if same pool already held (use REBALANCE instead)
+5. Portfolio drawdown > 10% → pause ENTER
+6. Position size > 30% portfolio → cap to 30% and approve
+7. Rebalance range inverted or > `MAX_REBALANCE_RANGE_BINS` → reject
 
 ### Config (`engine/config-service.ts`)
 

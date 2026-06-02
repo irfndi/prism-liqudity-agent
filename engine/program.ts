@@ -193,7 +193,9 @@ export const program = Effect.gen(function* () {
 
       // Blacklist check (token mints only; deployer info not yet fetched)
       // TODO: fetch token deployer/authority from on-chain metadata and pass to checkPool
-      yield* blacklist.checkPool(poolAddress, pool.tokenX, pool.tokenY);
+      yield* blacklist
+        .checkPool(poolAddress, pool.tokenX, pool.tokenY)
+        .pipe(Effect.catchAll(() => Effect.void));
 
       const metrics = strategy.computeMetrics(pool, binArray, 0);
 

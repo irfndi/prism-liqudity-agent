@@ -15,7 +15,7 @@ Notes for OpenCode sessions working in `prism-dlmm`. Read this before touching t
 
 ```bash
 bun install                # install
-bun run setup              # interactive .env wizard (writes .env, runs docker-compose chromadb)
+bun run setup              # interactive .env wizard (writes .env)
 bun run dev                # bun --watch engine/index.ts
 bun run backtest           # bun run ops/backtest.ts
 bun run test               # vitest run (bench/**/*.test.ts)
@@ -80,12 +80,12 @@ Don't import service classes directly. The whole runtime is one `Effect.gen` blo
 These are the high-cost mistakes. Do not trust stale prose — verify in code.
 
 - **No MCP tools.** `engine/tools/index.ts` does not exist. The "intercept `meteora_decision`" pattern in `CLAUDE.md` and the "7 MCP tools" table in `ARCHITECTURE.md` describe an older design. The current engine decides directly inside `engine/program.ts`. `@anthropic-ai/sdk` is in `package.json` deps but unused at runtime.
-- **Memory is `sqlite-vec`, not Chroma.** `engine/db.ts` creates a `vec0` virtual table for embeddings. `chromadb` is a dead dependency. `CHROMA_URL` is loaded in `config-service.ts` but never read by any service. `docker-compose.yml` still starts a Chroma container that the app does not use.
+- **Memory is `sqlite-vec`, not Chroma.** `engine/db.ts` creates a `vec0` virtual table for embeddings. `chromadb` is a dead dependency. `CHROMA_URL` is loaded in `config-service.ts` but never read by any service. `docker-compose.yml` was removed.
 - **Dockerfile CMD is wrong.** `CMD ["node", "dist/main.js"]` will fail — `tsdown` outputs `dist/engine/index.js` (one level deeper). The container is not actually used by the dev workflow; if you fix it, also note that the runtime expects an `agent` user with `/app/logs` writable.
 - **`CONTRIBUTING.md` paths are wrong.** It references `src/mcp/server.ts`, `src/risk/engine.ts`, and `tests/` for new tests. None of these exist. The test dir is `bench/`, the service file is `engine/risk-service.ts`, etc.
 - **License mismatch.** `package.json` says MIT; `CONTRIBUTING.md` says AGPL-3.0. Do not regenerate either without checking intent.
-- **`CONTRIBUTING.md` says "no console.log — use `createLogger(component)`"**, but `engine/program.ts` and `engine/index.ts` use raw `console.info/warn/error/debug` extensively. `createLogger` is exported and used by `logger.ts` itself (writes to `logs/audit-trail.jsonl`). The rule is *aspirational*; match existing patterns in the file you're editing.
-- **Position state is in-memory only.** `program.ts` uses a module-level `Map` (`trackedPositions`). Restart loses everything. `db-service.ts` has `savePosition`/`getPosition` methods, but `program.ts` never calls them — the runtime path is `trackedPositions` only. If you add persistence, both call sites and `buildLayer` need changes.
+- **`CONTRIBUTING.md` says "no console.log — use `createLogger(component)`"**. `createLogger` is exported from `engine/logger.ts` and writes to `logs/audit-trail.jsonl`. Prefer `createLogger(component)` for new code; existing files like `engine/program.ts` still have raw `console.*` calls that should be migrated over time.
+- **Position state is persisted to SQLite.** `program.ts` uses a module-level `Map` (`trackedPositions`) for fast cycle access, but `savePosition`/`getPosition`/`deletePosition` from `DbService` are called on every state change (ENTER, EXIT, REBALANCE, fee claim). On startup, open positions are loaded from SQLite so the agent survives restarts without losing track of OOR positions or trailing-stop state.
 - **One ENTER per cycle in live mode.** `program.ts` line 488 silently skips `ENTER` if `trackedPositions.size > 0`. Easy to mistake for a bug.
 - **Live execution is a no-op without a wallet.** `WALLET_PRIVATE_KEY` is optional; with no key, `adapter.hasWallet()` returns false and `executeLive` exits early. Paper mode is the default and the only thing verified end-to-end.
 - **Coverage is misleading.** `vitest.config.ts` excludes `engine/index.ts`, `engine/program.ts`, `engine/adapter-service.ts`, `engine/services.ts`, `engine/types.ts`, `engine/logger*`, `engine/config-service.ts`, `engine/memory-service.ts`, `engine/screener-service.ts` from coverage. The 80% / 70% thresholds apply only to the remaining modules — not the whole engine.

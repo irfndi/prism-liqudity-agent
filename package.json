@@ -4,7 +4,7 @@
   "description": "Autonomous DLMM rebalancing agent for Meteora pools on Solana",
   "type": "module",
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "node dist/engine/index.js",
     "dev": "bun run --watch engine/index.ts",
     "build": "tsdown",
     "setup": "bun run ops/setup.ts",
@@ -14,7 +14,7 @@
     "lint": "tsc --noEmit && oxlint engine ops bench",
     "format": "oxfmt --write engine ops bench",
     "format:check": "oxfmt --check engine ops bench",
-    "coverage": "vitest run --coverage"
+    "coverage": "bunx --bun vitest run --coverage"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.8",
-    "bun-types": "latest",
+    "bun-types": "^1.2.0",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
     "tsdown": "^0.22.1",
