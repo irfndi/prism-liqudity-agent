@@ -1,4 +1,4 @@
-import { Effect, Layer, Context, pipe } from "effect";
+import { Effect, Layer, Context } from "effect";
 import { Hono } from "hono";
 import { handle } from "hono/cloudflare-workers";
 
@@ -11,6 +11,7 @@ interface Env {
   FEE_WALLET_ADDRESS: string;
   TELEGRAM_BOT_TOKEN: string;
   GITHUB_TOKEN: string;
+  GITHUB_REPO: string;
 }
 
 // Services
@@ -185,8 +186,11 @@ app.post("/v1/register", async (c) => {
     // Increment rate limit counter
     await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
 
-    // If telegram_id provided, link immediately
+    // If telegram_id provided, validate and link immediately
     if (body.telegram_id) {
+      if (!/^\d+$/.test(body.telegram_id)) {
+        return c.json({ error: "Invalid telegram_id format. Must be numeric." }, 400);
+      }
       await DB.prepare("UPDATE users SET telegram_id = ? WHERE id = ?")
         .bind(body.telegram_id, result.userId)
         .run();
@@ -264,6 +268,10 @@ app.post("/v1/link-telegram/confirm", async (c) => {
     return c.json({ error: "Code and telegram_id required" }, 400);
   }
 
+  if (!/^\d+$/.test(body.telegram_id)) {
+    return c.json({ error: "Invalid telegram_id format. Must be numeric." }, 400);
+  }
+
   try {
     // Atomic update: mark code as used only if not already used and not expired
     const updateResult = await DB.prepare(
@@ -320,17 +328,19 @@ app.post("/v1/link-telegram/confirm", async (c) => {
 });
 
 app.post("/v1/issue", async (c) => {
-  const { GITHUB_TOKEN } = c.env;
+  const { GITHUB_TOKEN, GITHUB_REPO } = c.env;
   const body = await c.req.json<{ title: string; body: string }>();
 
   if (!body.title) {
     return c.json({ error: "Title required" }, 400);
   }
 
+  const repo = GITHUB_REPO || "irfndi/prism-dlmm";
+
   try {
     // Create GitHub issue
     const response = await fetch(
-      "https://api.github.com/repos/irfndi/prism-dlmm/issues",
+      `https://api.github.com/repos/${repo}/issues`,
       {
         method: "POST",
         headers: {
