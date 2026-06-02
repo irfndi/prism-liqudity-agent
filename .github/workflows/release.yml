@@ -12,6 +12,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set VERSION
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -145,5 +149,5 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            prism-v${{ github.ref_name }}.tar.gz
-            prism-v${{ github.ref_name }}.tar.gz.sha256
+            prism-v${{ env.VERSION }}.tar.gz
+            prism-v${{ env.VERSION }}.tar.gz.sha256
