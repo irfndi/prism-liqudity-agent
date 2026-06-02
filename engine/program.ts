@@ -604,8 +604,9 @@ export const program = Effect.gen(function* () {
         }
       } else if (decision.action === "EXIT") {
         const pos = trackedPositions.get(decision.poolAddress);
+        let exited = false;
         if (pos?.positionPubKey) {
-          yield* adapter.exitPosition(decision.poolAddress, pos.positionPubKey).pipe(
+          const result = yield* adapter.exitPosition(decision.poolAddress, pos.positionPubKey).pipe(
             Effect.tap(() =>
               console.info("Live position exited", {
                 pool: decision.poolAddress,
@@ -619,9 +620,14 @@ export const program = Effect.gen(function* () {
               return Effect.succeed(null);
             }),
           );
+          exited = result !== null;
+        } else {
+          exited = true;
         }
-        trackedPositions.delete(decision.poolAddress);
-        yield* db.deletePosition(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        if (exited) {
+          trackedPositions.delete(decision.poolAddress);
+          yield* db.deletePosition(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        }
       } else if (decision.action === "REBALANCE" && decision.rebalanceParams) {
         const pos = trackedPositions.get(decision.poolAddress);
         if (pos?.positionPubKey) {
@@ -675,7 +681,7 @@ export const program = Effect.gen(function* () {
     Effect.gen(function* () {
       for (const [poolAddress, pos] of trackedPositions) {
         if (pos.positionPubKey && Date.now() - pos.lastFeeClaimAt > config.feeClaimIntervalMs) {
-          yield* adapter.claimFees(poolAddress, pos.positionPubKey).pipe(
+          const result = yield* adapter.claimFees(poolAddress, pos.positionPubKey).pipe(
             Effect.tap((r) =>
               console.info("Fees claimed", {
                 pool: poolAddress,
@@ -684,10 +690,12 @@ export const program = Effect.gen(function* () {
                 tx: r.txSignature,
               }),
             ),
-            Effect.catchAll(() => Effect.void),
+            Effect.catchAll(() => Effect.succeed(null)),
           );
-          pos.lastFeeClaimAt = Date.now();
-          yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
+          if (result) {
+            pos.lastFeeClaimAt = Date.now();
+            yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
+          }
         }
       }
     });

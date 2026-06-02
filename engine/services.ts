@@ -174,6 +174,8 @@ export interface BlacklistApi {
     poolAddress: string,
     tokenXMint: string,
     tokenYMint: string,
+    tokenXDeployer?: string,
+    tokenYDeployer?: string,
   ) => Effect.Effect<void, unknown>;
 }
 
