@@ -13,14 +13,14 @@ async function main() {
         p.text({
           message: "Anthropic API key",
           placeholder: "sk-ant-...",
-          validate: (v) => (v.startsWith("sk-") ? undefined : "Must start with sk-"),
+          validate: (v) => (v?.startsWith("sk-") ? undefined : "Must start with sk-"),
         }),
 
       heliusKey: () =>
         p.text({
           message: "Helius API key",
           placeholder: "your-helius-api-key",
-          validate: (v) => (v.length > 8 ? undefined : "Key too short"),
+          validate: (v) => (v && v.length > 8 ? undefined : "Key too short"),
         }),
 
       paperTrading: () =>
@@ -44,13 +44,6 @@ async function main() {
           initialValue: "",
         }),
 
-      chromaUrl: () =>
-        p.text({
-          message: "Chroma vector DB URL",
-          placeholder: "http://localhost:8000",
-          initialValue: "http://localhost:8000",
-        }),
-
       claudeModel: () =>
         p.select({
           message: "Claude model",
@@ -66,7 +59,7 @@ async function main() {
         p.cancel("Setup cancelled.");
         process.exit(0);
       },
-    }
+    },
   );
 
   const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${answers.heliusKey as string}`;
@@ -92,9 +85,6 @@ async function main() {
     "",
     "# Model",
     `CLAUDE_MODEL=${answers.claudeModel as string}`,
-    "",
-    "# Memory",
-    `CHROMA_URL=${answers.chromaUrl as string}`,
   ].join("\n");
 
   const envPath = path.resolve(".env");
@@ -105,15 +95,13 @@ async function main() {
       "✓ .env created",
       "",
       "Next steps:",
-      "  1. Start Chroma:  docker-compose up chromadb -d",
-      "  2. Run agent:     bun run dev",
-      "  3. Run backtest:  bun run backtest",
+      "  1. Run agent:     bun run dev",
+      "  2. Run backtest:  bun run backtest",
     ].join("\n"),
-    "Setup complete"
+    "Setup complete",
   );
 
   p.outro("Happy rebalancing!");
 }
 
 main().catch(console.error);
-

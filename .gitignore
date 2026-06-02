@@ -15,6 +15,12 @@ logs/
 # Chroma data
 chroma-data/
 
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+data/
+
 # Editor
 .vscode/
 .idea/

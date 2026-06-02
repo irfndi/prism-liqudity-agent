@@ -12,10 +12,12 @@
     "declaration": true,
     "sourceMap": true,
     "resolveJsonModule": true,
+    "types": ["bun-types"],
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "include": ["engine/**/*", "ops/**/*", "types/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["engine/**/*", "ops/**/*", "types/**/*", "bench/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
-
