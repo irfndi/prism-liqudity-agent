@@ -47,7 +47,7 @@ export const UpdateServiceLive = Effect.gen(function* () {
 
       return {
         version: latest,
-        channel: release.prerelease ? "beta" : "stable",
+        channel,
         releaseUrl: release.html_url,
         releaseNotes: release.body,
         publishedAt: release.published_at,
