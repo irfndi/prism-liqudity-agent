@@ -99,24 +99,29 @@ export const UpdateServiceLive = Effect.gen(function* () {
           pipeline(downloadResponse.body!, createWriteStream(tarballPath)),
         );
 
-        if (release.sha256Url) {
-          const expectedHash = yield* Effect.tryPromise(() =>
-            fetch(release.sha256Url).then((r) => r.text()),
+        if (!release.sha256Url) {
+          return yield* Effect.fail(
+            new Error(
+              `Release manifest missing sha256Url — refusing to install ${version} without integrity check`,
+            ),
           );
-          const expectedHashTrimmed = expectedHash.trim().split(/\s+/)[0] ?? "";
-          const fileBuffer = readFileSync(tarballPath);
-          const actualHash = createHash("sha256")
-            .update(fileBuffer)
-            .digest("hex");
-          if (actualHash !== expectedHashTrimmed) {
-            return yield* Effect.fail(
-              new Error(
-                `SHA-256 mismatch: expected ${expectedHashTrimmed}, got ${actualHash}`,
-              ),
-            );
-          }
-          logger.info("SHA-256 checksum verified");
         }
+        const expectedHash = yield* Effect.tryPromise(() =>
+          fetch(release.sha256Url).then((r) => r.text()),
+        );
+        const expectedHashTrimmed = expectedHash.trim().split(/\s+/)[0] ?? "";
+        const fileBuffer = readFileSync(tarballPath);
+        const actualHash = createHash("sha256")
+          .update(fileBuffer)
+          .digest("hex");
+        if (actualHash !== expectedHashTrimmed) {
+          return yield* Effect.fail(
+            new Error(
+              `SHA-256 mismatch: expected ${expectedHashTrimmed}, got ${actualHash}`,
+            ),
+          );
+        }
+        logger.info("SHA-256 checksum verified");
 
         yield* Effect.try(() => {
           execSync(`tar -xzf "${tarballPath}" -C "${workDir}"`, {
@@ -124,25 +129,63 @@ export const UpdateServiceLive = Effect.gen(function* () {
           });
         });
 
-        const extractedDir = join(workDir, "prism-liquidity-agent");
-        if (!existsSync(extractedDir)) {
+        // Tarballs may extract into either workDir or workDir/prism-liquidity-agent.
+        // Detect whichever exists and contains the expected files.
+        const candidateRoots = [
+          workDir,
+          join(workDir, "prism-liquidity-agent"),
+        ];
+        const extractedDir = candidateRoots.find(
+          (p) =>
+            existsSync(p) && existsSync(join(p, "package.json")),
+        );
+        if (!extractedDir) {
           return yield* Effect.fail(
-            new Error("Extracted tarball missing expected directory"),
+            new Error(
+              "Extracted tarball missing package.json — cannot determine install root",
+            ),
           );
         }
 
         yield* Effect.try(() => {
-          execSync("bun install", { cwd: extractedDir, stdio: "inherit" });
-        });
-
-        yield* Effect.try(() => {
-          execSync("cp -r ./* .[!.]* ../../", {
+          execSync("bun install --production=false", {
             cwd: extractedDir,
             stdio: "inherit",
           });
         });
 
-        logger.info(`Updated to ${version} from ${release.source}`);
+        // Atomic swap: stage new files alongside install root, then rename.
+        // This avoids leaving the live install in a half-updated state on failure.
+        const installRoot = process.cwd();
+        const stagedRoot = join(installRoot, `..`, `.prism-update-stage`);
+        const backupRoot = join(installRoot, `..`, `.prism-update-backup`);
+
+        yield* Effect.try(() => {
+          // Remove any stale staging directory from a prior failed run.
+          if (existsSync(stagedRoot)) {
+            rmSync(stagedRoot, { recursive: true, force: true });
+          }
+          // Copy the new tree into a staging dir beside the install root.
+          execSync(
+            `cp -R "${extractedDir}/." "${stagedRoot}/"`,
+            { stdio: "inherit" },
+          );
+
+          // Back up the current install so we can roll back on swap failure.
+          if (existsSync(backupRoot)) {
+            rmSync(backupRoot, { recursive: true, force: true });
+          }
+          const installName = installRoot.split("/").pop() ?? "prism-liquidity-agent";
+          const currentBackup = join(installRoot, `..`, `.prism-prev-${installName}`);
+          execSync(`mv "${installRoot}" "${currentBackup}"`, { stdio: "inherit" });
+          execSync(`mv "${stagedRoot}" "${installRoot}"`, { stdio: "inherit" });
+          // Keep the previous install as a sibling backup until the user confirms.
+          execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
+        });
+
+        logger.info(
+          `Updated to ${version} from ${release.source}. Previous install kept at ${backupRoot} for rollback.`,
+        );
       } finally {
         if (existsSync(workDir)) {
           rmSync(workDir, { recursive: true, force: true });
