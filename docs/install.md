@@ -1,5 +1,7 @@
 # Prism Installation Guide
 
+> **For agent harnesses (OpenClaw, Hermes, acpx):** The Cloudflare infrastructure is already deployed. Just clone, `bun install`, then `prism register` and `prism setup`. See [`agent-harness.md`](agent-harness.md) for the full agent setup flow.
+
 ## Prerequisites
 
 - **Bun 1.2+** — [Install Bun](https://bun.sh/docs/installation)
@@ -11,13 +13,13 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/irfndi/prism-dlmm.git
-cd prism-dlmm
+git clone https://github.com/irfndi/prism-liquidity-agent.git
+cd prism-liquidity-agent
 
 # 2. Install dependencies
 bun install
 
-# 3. Register with Prism (get your API key)
+# 3. Register with Prism (get your API key from deployed Cloudflare API)
 prism register
 
 # 4. Configure your trading agent
