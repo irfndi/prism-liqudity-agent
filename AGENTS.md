@@ -232,6 +232,78 @@ The agent can dump a full snapshot (pool state + bin array) into `pool_snapshots
 
 In test mode (`VITEST=true` or `NODE_ENV=test`), missing `ANTHROPIC_API_KEY` / `HELIUS_API_KEY` default to dummy values so the suite can run without real keys.
 
+## R2-based update mechanism (GitHub-independent)
+
+`prism update` does **not** use `git fetch` or `git checkout`. Releases are tarballs hosted on **Cloudflare R2** (bucket `prism-backups`), so updates work even if GitHub is private or blocked.
+
+### Flow
+
+1. `prism update` fetches `https://r2.prism-agent.com/releases/latest.json` (R2 manifest) — or per-channel `releases/channel/{beta,dev}.json`
+2. Compares `manifest.version` with the locally installed version (from `package.json`)
+3. If newer, downloads the tarball from `manifest.tarball_url`
+4. Verifies SHA-256 against `manifest.sha256_url` (mandatory, mismatch aborts)
+5. Optionally verifies GPG signature at `manifest.signature_url` (if `GPG_PRIVATE_KEY` secret is set in release workflow)
+6. Extracts to a temp dir, runs `bun install`, then `cp -r` the files over the current install
+7. Cleans up temp dir
+
+### Release process (`.github/workflows/release.yml`)
+
+On push of a tag matching `v*.*.*`:
+
+1. Checkout, install Bun, run `bun install`, `bun run lint`, `bun run test`
+2. Build tarball (excludes `node_modules`, `dist`, `.git`, `*.db`, `logs`, `.env`, etc.)
+3. Generate SHA-256 checksum
+4. Sign with GPG (if `GPG_PRIVATE_KEY` secret is configured)
+5. Upload tarball + checksum + signature to `prism-backups/releases/v{tag}/`
+6. Update `prism-backups/releases/latest.json` (and per-channel manifests for `beta`/`dev`)
+7. Optionally create a GitHub Release for visibility (falls back gracefully if GitHub is down)
+
+### Fallback to GitHub Releases
+
+If R2 is unreachable, `fetchLatestRelease()` automatically falls back to GitHub Releases API and extracts the same `prism-v*.tar.gz` asset. This means the update mechanism is resilient to:
+- R2 outage (falls back to GitHub)
+- GitHub private/blocked (R2 still works)
+- Network issues (user can manually download from either)
+
+### Config
+
+- `UPDATE_R2_PUBLIC_URL` (default `https://r2.prism-agent.com`) — R2 public URL
+- `UPDATE_GITHUB_REPO` (default `irfndi/prism-liquidity-agent`) — fallback repo
+- `UPDATE_CHANNEL` (`stable` | `beta` | `dev`, default `stable`)
+
+### CLI flags
+
+```bash
+prism update                          # check + apply latest stable from R2
+prism update --check-only             # just check, don't apply
+prism update --channel beta           # use beta channel
+prism update --r2-url https://my-r2.example.com  # custom R2 URL
+```
+
+### R2 bucket structure
+
+```
+prism-backups/
+├── releases/
+│   ├── latest.json                    # latest stable manifest
+│   ├── v1.2.3/
+│   │   ├── prism-v1.2.3.tar.gz
+│   │   ├── prism-v1.2.3.tar.gz.sha256
+│   │   └── prism-v1.2.3.tar.gz.asc    # GPG signature (if configured)
+│   ├── v1.2.4/
+│   │   └── ...
+│   └── channel/
+│       ├── beta.json
+│       └── dev.json
+```
+
+### Required GitHub secrets
+
+- `CLOUDFLARE_API_TOKEN` — Cloudflare API token with R2 write access
+- `CLOUDFLARE_ACCOUNT_ID` — `a37da71c38a2f7ab732057d87d5d0f6e`
+- `GPG_PRIVATE_KEY` — (optional) GPG key for tarball signing
+- `GITHUB_TOKEN` — (optional) for creating GitHub Releases
+
 ## Testing
 
 - Engine tests live in `bench/*.test.ts`. There is no `tests/` directory.

@@ -40,6 +40,8 @@ export interface AppConfig {
   readonly updateChannel: "stable" | "beta" | "dev";
   readonly updateGithubRepo: string;
   readonly updateAllowDirty: boolean;
+  // R2 release tarball source (GitHub-independent updates)
+  readonly updateR2PublicUrl: string;
 }
 
 export class ConfigService extends Context.Tag("ConfigService")<ConfigService, AppConfig>() {}
@@ -146,6 +148,9 @@ const loadConfig = Effect.gen(function* () {
   const updateAllowDirty = yield* Config.boolean("UPDATE_ALLOW_DIRTY").pipe(
     Effect.orElseSucceed(() => false),
   );
+  const updateR2PublicUrl = yield* Config.string("UPDATE_R2_PUBLIC_URL").pipe(
+    Effect.orElseSucceed(() => "https://r2.prism-agent.com"),
+  );
 
   const watchlistPools = watchlistPoolsRaw
     .split(",")
@@ -189,6 +194,7 @@ const loadConfig = Effect.gen(function* () {
     updateChannel,
     updateGithubRepo,
     updateAllowDirty,
+    updateR2PublicUrl,
   };
 
   return cfg;
