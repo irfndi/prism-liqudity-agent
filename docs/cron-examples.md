@@ -4,20 +4,22 @@ Run Prism unattended on a schedule.
 
 ## Cron (Linux/macOS)
 
+> **Warning:** Cron jobs spawn a new process on each run. If `prism dev` is a long-running process, multiple instances may run concurrently. Prefer `systemd` or `launchd` for long-running agents.
+
 ### Every 10 minutes (default scan interval)
 
 ```bash
 # Edit crontab
 crontab -e
 
-# Add line:
-*/10 * * * * cd /path/to/prism-dlmm && prism dev >> /var/log/prism.log 2>&1
+# Add line (use flock to prevent overlapping runs):
+*/10 * * * * cd /path/to/prism-dlmm && flock -n /tmp/prism.lock prism dev >> /var/log/prism.log 2>&1
 ```
 
 ### Every hour (conservative)
 
 ```bash
-0 * * * * cd /path/to/prism-dlmm && prism dev >> /var/log/prism.log 2>&1
+0 * * * * cd /path/to/prism-dlmm && flock -n /tmp/prism.lock prism dev >> /var/log/prism.log 2>&1
 ```
 
 ### With log rotation
