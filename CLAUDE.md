@@ -25,16 +25,16 @@ Per-pool, `runRuleBasedAgent()` executes sequentially:
 3. `memory.getRelevantContext()` — check for recent warnings on this pool
 4. `passesPreFilter()` — TVL, auth, bin util gates (hard reject before decision logic)
 5. Decision rules (in order):
-   - **EXIT** if TVL dropped > `TVL_DROP_EXIT_PCT`, auth < threshold, or fee/IL < 0.5
+   - **EXIT** if TVL dropped > `TVL_DROP_EXIT_PCT`, auth < threshold, fee/IL < 0.5, or trailing stop breached
    - **REBALANCE** if drift > 60% of range edge AND `timeSinceRebal >= MIN_REBALANCE_INTERVAL_MS` AND simulated net benefit > `MIN_REBALANCE_NET_BENEFIT_USD`
    - **HOLD** for existing positions with strong fee/IL and no recent warnings
    - **ENTER** for new pools with fee/IL > threshold*1.5, auth > 0.8, util > 0.4, TVL > `MIN_POOL_TVL_USD * 2`
 6. `risk.evaluate()` — confidence, concurrent positions, duplicate pool, drawdown, size cap, bin range validation
 7. Execute (paper or live) + `memory.recordOutcome()`
 
-Positions and rebalance timestamps are tracked in-memory via `trackedPositions` (Map) and `lastRebalanceTime` (Map). There is no persistent position state across restarts.
+Positions are persisted to SQLite via `DbService`. On startup, open positions are loaded from the database so the agent survives restarts without losing track of OOR positions.
 
-### Live Trading (`engine/adapters/meteora.ts`)
+### Live Trading (`engine/adapter-service.ts`)
 
 `MeteoraAdapter` wraps the `@meteora-ag/dlmm` SDK:
 
@@ -43,6 +43,7 @@ Positions and rebalance timestamps are tracked in-memory via `trackedPositions` 
 - `exitPosition()` removes 100% liquidity, claims fees, and closes the position.
 - `rebalancePosition()` is a sequential exit-then-enter, not an atomic operation.
 - `swapViaJupiter()` is available for token swaps via Jupiter v6 API but is not used by the main loop.
+- `getNativeSolBalance()` returns raw lamports from `connection.getBalance(wallet.publicKey)` for gas pre-flight checks.
 
 ### Pool Data Sources
 
@@ -54,7 +55,7 @@ Positions and rebalance timestamps are tracked in-memory via `trackedPositions` 
 
 `getBinArray()` builds **synthetic bins** (prices only, zero reserves) because the DLMM SDK's `getBinsBetweenLowerAndUpperBound` crashes on many mainnet pools with sparse bin arrays. The bin step is read from `lbPair.binStep`.
 
-### Fee/IL Math (`engine/probes/dlmm.ts`)
+### Fee/IL Math (`engine/strategy-service.ts`)
 
 `computeFeeIlRatio()` uses the actual DLMM bin step to convert drift distance into a price ratio, then applies the standard CPMM IL formula:
 
@@ -67,9 +68,26 @@ This replaced a prior flat 0.2% per-bin coefficient that misestimated IL on high
 
 `recommendBinRange()` returns asymmetric half-widths based on bin step: ±25 for ≤10bps, ±20 for 11–25bps, ±15 for >25bps.
 
-### Memory (`engine/memory/store.ts`)
+### SQLite Persistence (`engine/db-service.ts`, `engine/db.ts`)
 
-ChromaDB-backed with three TTL tiers:
+All local state lives in a single SQLite database (`bun:sqlite` + `sqlite-vec`):
+
+- `positions` — open position records with trailing-stop columns
+- `audit` — decision trail (replaced JSONL file streaming)
+- `blacklists` — cached rejections
+- `vec_memory` — virtual `vec0` table for embeddings (384-dim floats) with auxiliary metadata columns
+
+Auto-migration system (`engine/db.ts`):
+
+- `_migrations` table tracks applied versions
+- `hasColumn()` guards make ALTER TABLE migrations idempotent
+- Migrations run on every `createDatabase()` call
+
+On macOS, `Database.setCustomSQLite()` points to the Homebrew `libsqlite3.dylib` so extension loading works for `sqlite-vec`.
+
+### Memory (`engine/memory-service.ts`)
+
+Memory is now SQLite-backed via `sqlite-vec` instead of ChromaDB. Three TTL tiers:
 
 | Category | TTL |
 |----------|-----|
@@ -77,23 +95,36 @@ ChromaDB-backed with three TTL tiers:
 | `warning` | 60 days |
 | `outcome` | 180 days |
 
-Collection name: `prism_memory`. Merge guard uses cosine **distance** < 0.08 (i.e. similarity > 0.92). `getRelevantContext()` reranks by blending similarity (70%) with recency decay (30%, 30-day half-life).
+Merge guard uses cosine **distance** < 0.08 (i.e. similarity > 0.92). `getRelevantContext()` reranks by blending similarity (70%) with recency decay (30%, 30-day half-life). Embeddings are generated with `@xenova/transformers`.
 
-### Risk Gates (`engine/risk/gate.ts`)
+### Trailing Exit / Profit Protection (`engine/program.ts`)
+
+Existing positions are revalued each cycle via `estimatePositionValue()` (bin-drift heuristic). The highest value seen is tracked in `highestValueUsd`. If drawdown from peak exceeds `TRAILING_STOP_PCT` (default 10%), the decision is overridden to **EXIT**.
+
+`estimatePositionValue(pos, pool)` roughly interpolates IL based on how far the active bin has drifted from the position range center: full value at center, 50% at the far edge.
+
+### Risk Gates (`engine/risk-service.ts`)
 
 Checks execute in order with early return:
 
-1. Confidence < `CONFIDENCE_THRESHOLD` → reject
-2. Max concurrent positions reached → reject ENTER
-3. **Duplicate pool guard** → reject ENTER if same pool already held (use REBALANCE instead)
-4. Portfolio drawdown > 10% → pause ENTER
-5. Position size > 30% portfolio → cap to 30% and approve
-6. Rebalance range inverted or > `MAX_REBALANCE_RANGE_BINS` → reject
-7. EXIT → always approved (capital protection)
+1. EXIT → always approved (capital protection)
+2. Confidence < `CONFIDENCE_THRESHOLD` → reject
+3. Max concurrent positions reached → reject ENTER
+4. **Duplicate pool guard** → reject ENTER if same pool already held (use REBALANCE instead)
+5. Portfolio drawdown > 10% → pause ENTER
+6. Position size > 30% portfolio → cap to 30% and approve
+7. Rebalance range inverted or > `MAX_REBALANCE_RANGE_BINS` → reject
 
-### Config (`engine/config.ts`)
+### Config (`engine/config-service.ts`)
 
-Zod schema with `safeParse`. On validation failure, prints all issues and exits with code 1. Test environment (`VITEST=true` or `NODE_ENV=test`) auto-injects dummy API keys so tests run without real credentials.
+Effect-TS `Config` module with `Config.string` / `Config.number` / `Config.boolean` and `orElseSucceed` fallbacks. No hard exit on missing envs — every value has a sensible default. Test environment (`VITEST=true` or `NODE_ENV=test`) auto-injects dummy API keys so tests run without real credentials.
+
+Key env additions:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRAILING_STOP_PCT` | `0.10` | Drawdown from peak that triggers EXIT |
+| `SQLITE_DB_PATH` | `./prism.db` | SQLite database file path |
 
 ### MCP Tools (`engine/tools/index.ts`)
 
@@ -108,7 +139,7 @@ Generates synthetic 30-day price history via random walk with regime-switching v
 ```bash
 bun run dev              # run with hot reload
 bun run backtest         # historical simulation with grid search
-bun run test             # vitest suite (bench/**/*.test.ts)
+bun run test             # vitest suite (bench/**/*.test.ts) — runs via Bun runtime
 bun run test:watch       # vitest in watch mode
 bun run lint             # TypeScript type check (tsc --noEmit)
 bun run setup            # interactive .env wizard
@@ -121,12 +152,167 @@ bun run test -- --reporter=verbose bench/strategy.test.ts
 bun run test -- --reporter=verbose -t "rejects inverted bin range"
 ```
 
+Tests **must** execute under Bun because `bun:sqlite` is not available in Node.js. The `package.json` scripts already use `bunx --bun vitest run`.
+
+## Effect-TS wiring notes
+
+`buildLayer()` in `engine/program.ts` explicitly wires cross-layer dependencies with `Layer.provide()` because `Layer.merge` does **not** resolve requirements during construction:
+
+```ts
+const adapter = Layer.provide(AdapterLive, configLayer);
+const memory  = Layer.provide(MemoryLive, dbLayer);
+const audit   = Layer.provide(AuditLive, dbLayer);
+const screenerDeps = Layer.merge(adapter, StrategyLive);
+const screener = Layer.provide(ScreenerLive({...}), screenerDeps);
+```
+
+`exactOptionalPropertyTypes: true` in `tsconfig.json` breaks Effect-TS v3 `Effect.provide` narrowing. Tests use an `any` cast helper: `Effect.runSync((Effect.provide as any)(effect, layer))`.
+
 ## Key constraints
 
 - Never use `console.log` — use `createLogger(component)` from `engine/logger.ts`. It writes to stdout + `logs/audit-trail.jsonl`.
 - Paper trading is the default — `PAPER_TRADING=true` in `.env`
-- No `any` types — use `unknown` and narrow. The codebase has one intentional `as any` in `fetchPoolStats()` for parsed mint account data.
+- No `any` types in production code — use `unknown` and narrow. The codebase has intentional `as any` casts in test helpers and one in `fetchPoolStats()` for parsed mint account data.
 - Wallet balance checks cap deposit amounts. A position entry fails if either side of the pair has zero balance.
 - One position per pool max. The duplicate pool guard prevents double-entry.
 - Only one ENTER per cycle in live mode (conserves capital).
-- Minimum 0.05 SOL reserve required for gas + position rent before any live ENTER.
+- Minimum 0.03 SOL reserve required for gas before any live ENTER (gas-aware sizing).
+
+<!-- rtk-instructions v2 -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+## Golden Rule
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
+
+**Important**: Even in command chains with `&&`, use `rtk`:
+```bash
+# ❌ Wrong
+git add . && git commit -m "msg" && git push
+
+# ✅ Correct
+rtk git add . && rtk git commit -m "msg" && rtk git push
+```
+
+## RTK Commands by Workflow
+
+### Build & Compile (80-90% savings)
+```bash
+rtk cargo build         # Cargo build output
+rtk cargo check         # Cargo check output
+rtk cargo clippy        # Clippy warnings grouped by file (80%)
+rtk tsc                 # TypeScript errors grouped by file/code (83%)
+rtk lint                # ESLint/Biome violations grouped (84%)
+rtk prettier --check    # Files needing format only (70%)
+rtk next build          # Next.js build with route metrics (87%)
+```
+
+### Test (60-99% savings)
+```bash
+rtk cargo test          # Cargo test failures only (90%)
+rtk go test             # Go test failures only (90%)
+rtk jest                # Jest failures only (99.5%)
+rtk vitest              # Vitest failures only (99.5%)
+rtk playwright test     # Playwright failures only (94%)
+rtk pytest              # Python test failures only (90%)
+rtk rake test           # Ruby test failures only (90%)
+rtk rspec               # RSpec test failures only (60%)
+rtk test <cmd>          # Generic test wrapper - failures only
+```
+
+### Git (59-80% savings)
+```bash
+rtk git status          # Compact status
+rtk git log             # Compact log (works with all git flags)
+rtk git diff            # Compact diff (80%)
+rtk git show            # Compact show (80%)
+rtk git add             # Ultra-compact confirmations (59%)
+rtk git commit          # Ultra-compact confirmations (59%)
+rtk git push            # Ultra-compact confirmations
+rtk git pull            # Ultra-compact confirmations
+rtk git branch          # Compact branch list
+rtk git fetch           # Compact fetch
+rtk git stash           # Compact stash
+rtk git worktree        # Compact worktree
+```
+
+Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
+
+### GitHub (26-87% savings)
+```bash
+rtk gh pr view <num>    # Compact PR view (87%)
+rtk gh pr checks        # Compact PR checks (79%)
+rtk gh run list         # Compact workflow runs (82%)
+rtk gh issue list       # Compact issue list (80%)
+rtk gh api              # Compact API responses (26%)
+```
+
+### JavaScript/TypeScript Tooling (70-90% savings)
+```bash
+rtk pnpm list           # Compact dependency tree (70%)
+rtk pnpm outdated       # Compact outdated packages (80%)
+rtk pnpm install        # Compact install output (90%)
+rtk npm run <script>    # Compact npm script output
+rtk npx <cmd>           # Compact npx command output
+rtk prisma              # Prisma without ASCII art (88%)
+```
+
+### Files & Search (60-75% savings)
+```bash
+rtk ls <path>           # Tree format, compact (65%)
+rtk read <file>         # Code reading with filtering (60%)
+rtk grep <pattern>      # Search grouped by file (75%). Format flags (-c, -l, -L, -o, -Z) run raw.
+rtk find <pattern>      # Find grouped by directory (70%)
+```
+
+### Analysis & Debug (70-90% savings)
+```bash
+rtk err <cmd>           # Filter errors only from any command
+rtk log <file>          # Deduplicated logs with counts
+rtk json <file>         # JSON structure without values
+rtk deps                # Dependency overview
+rtk env                 # Environment variables compact
+rtk summary <cmd>       # Smart summary of command output
+rtk diff                # Ultra-compact diffs
+```
+
+### Infrastructure (85% savings)
+```bash
+rtk docker ps           # Compact container list
+rtk docker images       # Compact image list
+rtk docker logs <c>     # Deduplicated logs
+rtk kubectl get         # Compact resource list
+rtk kubectl logs        # Deduplicated pod logs
+```
+
+### Network (65-70% savings)
+```bash
+rtk curl <url>          # Compact HTTP responses (70%)
+rtk wget <url>          # Compact download output (65%)
+```
+
+### Meta Commands
+```bash
+rtk gain                # View token savings statistics
+rtk gain --history      # View command history with savings
+rtk discover            # Analyze Claude Code sessions for missed RTK usage
+rtk proxy <cmd>         # Run command without filtering (for debugging)
+rtk init                # Add RTK instructions to CLAUDE.md
+rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
+```
+
+## Token Savings Overview
+
+| Category | Commands | Typical Savings |
+|----------|----------|-----------------|
+| Tests | vitest, playwright, cargo test | 90-99% |
+| Build | next, tsc, lint, prettier | 70-87% |
+| Git | status, log, diff, add, commit | 59-80% |
+| GitHub | gh pr, gh run, gh issue | 26-87% |
+| Package Managers | pnpm, npm, npx | 70-90% |
+| Files | ls, read, grep, find | 60-75% |
+| Infrastructure | docker, kubectl | 85% |
+| Network | curl, wget | 65-70% |
+
+Overall average: **60-90% token reduction** on common development operations.
+<!-- /rtk-instructions -->

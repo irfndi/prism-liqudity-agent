@@ -1,0 +1,131 @@
+# AGENTS.md
+
+Notes for OpenCode sessions working in `prism-dlmm`. Read this before touching the codebase — several things in `README.md`, `CLAUDE.md`, `ARCHITECTURE.md`, and `CONTRIBUTING.md` are stale or wrong.
+
+## Stack
+
+- **Runtime**: Bun 1.2 (dev, tests, build). Node 20+ for Docker.
+- **Language**: TypeScript with `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`. Easy to trip over — read errors carefully.
+- **Framework**: [Effect-TS](https://effect.website) for DI (`Context.Tag` + `Layer`). No MCP server, no Anthropic SDK calls in the hot path.
+- **Storage**: SQLite via `bun:sqlite` + `sqlite-vec` (NOT Chroma — see *Things docs get wrong*).
+- **Build**: `tsdown` (entry: `engine/index.ts` → `dist/engine/index.js`).
+- **Test**: Vitest, scoped to `bench/**/*.test.ts`.
+
+## Commands
+
+```bash
+bun install                # install
+bun run setup              # interactive .env wizard (writes .env)
+bun run dev                # bun --watch engine/index.ts
+bun run backtest           # bun run ops/backtest.ts
+bun run test               # vitest run (bench/**/*.test.ts)
+bun run test -- -t "<name>"# single test by name
+bun run test -- bench/risk.test.ts  # single file
+bun run lint               # tsc --noEmit (strict, slow)
+bun run build              # tsdown → dist/engine/index.js
+bun run coverage           # vitest --coverage (see Coverage exclusions below)
+```
+
+CI runs `bun install` → `bun run lint` → `bun run test` on Bun 1.2.15 / Node 20 (`.github/workflows/ci.yml`).
+
+## Real architecture (start here)
+
+```
+engine/
+├── index.ts          15-line bootstrap: Effect.runPromise(program)
+├── program.ts        THE SCAN LOOP. All decision logic lives here.
+├── services.ts       All Context.Tag definitions (one per service)
+├── config-service.ts Env loader (Effect Config.string/.number/.boolean)
+├── adapter-service.ts Meteora SDK + Helius calls (749 lines, biggest file)
+├── strategy-service.ts Pure strategy math (fee/IL, vol auth, bin util)
+├── risk-service.ts   Pre-execution gates
+├── memory-service.ts Thin wrapper over db-service for memory ops
+├── db-service.ts     SQLite queries (positions, audit, blacklists, memory)
+├── db.ts             Schema + sqlite-vec setup
+├── audit-service.ts  JSONL audit logger
+├── blacklist-service.ts Deployer/token blacklist checks
+├── screener-service.ts  Pool discovery (when ENABLE_POOL_DISCOVERY=true)
+├── logger.ts         createLogger(component) → console + logs/audit-trail.jsonl
+├── types.ts          Shared interfaces
+└── data/             deployer-blacklist.json, token-blacklist.json
+```
+
+**There is no `probes/`, `tools/`, `adapters/`, `risk/`, or `memory/` directory.** ARCHITECTURE.md's component map is fictional. Every file is flat in `engine/`.
+
+### Effect-TS wiring pattern
+
+All side effects go through services defined as `Context.Tag` in `engine/services.ts`. The wiring lives in `buildLayer()` in `engine/program.ts` (lines 60–86). To add a service:
+
+1. Define the API in `engine/services.ts` with a `Context.Tag` class.
+2. Implement `YourServiceLive` in a new `engine/your-service.ts` returning a `Layer`.
+3. Add it to the `Layer.mergeAll(...)` in `buildLayer()` and to the `AllServices` union.
+4. `yield* YourService` inside the `Effect.gen` block in `program.ts` to consume it.
+
+Don't import service classes directly. The whole runtime is one `Effect.gen` block.
+
+### Decision flow (per cycle, per pool)
+
+1. `adapter.getPoolState` + `adapter.getBinArray` — fetch on-chain
+2. `blacklist.checkPool` — early reject (errors are swallowed, not raised)
+3. `strategy.computeMetrics` — pure, no IO
+4. Pre-filter: `tvlUsd < MIN_POOL_TVL_USD || volumeAuth < threshold || binUtil < threshold` → skip
+5. `memory.getRelevantContext` for recent warnings (errors swallowed)
+6. Decision rules in order: `EXIT` (TVL drop / vol auth / fee-IL<0.5) → `REBALANCE` (drift > 60% OR out-of-range grace expired) → `HOLD` (existing position) → `ENTER` (new pool, strict thresholds: `feeIlRatio > min*1.5`, `volAuth > 0.8`, `binUtil > 0.4`, `tvlUsd > min*2`)
+7. `risk.evaluate` — gates execution
+8. `audit.recordDecision` — every decision is logged (errors swallowed)
+9. Execute: paper (`trackedPositions.set/delete`) or live (`adapter.enterPosition`/etc.)
+
+## Things docs get wrong
+
+These are the high-cost mistakes. Do not trust stale prose — verify in code.
+
+- **No MCP tools.** `engine/tools/index.ts` does not exist. The "intercept `meteora_decision`" pattern in `CLAUDE.md` and the "7 MCP tools" table in `ARCHITECTURE.md` describe an older design. The current engine decides directly inside `engine/program.ts`. `@anthropic-ai/sdk` is in `package.json` deps but unused at runtime.
+- **Memory is `sqlite-vec`, not Chroma.** `engine/db.ts` creates a `vec0` virtual table for embeddings. `chromadb` is a dead dependency. `CHROMA_URL` is loaded in `config-service.ts` but never read by any service. `docker-compose.yml` was removed.
+- **Dockerfile CMD is wrong.** `CMD ["node", "dist/main.js"]` will fail — `tsdown` outputs `dist/engine/index.js` (one level deeper). The container is not actually used by the dev workflow; if you fix it, also note that the runtime expects an `agent` user with `/app/logs` writable.
+- **`CONTRIBUTING.md` paths are wrong.** It references `src/mcp/server.ts`, `src/risk/engine.ts`, and `tests/` for new tests. None of these exist. The test dir is `bench/`, the service file is `engine/risk-service.ts`, etc.
+- **License mismatch.** `package.json` says MIT; `CONTRIBUTING.md` says AGPL-3.0. Do not regenerate either without checking intent.
+- **`CONTRIBUTING.md` says "no console.log — use `createLogger(component)`"**. `createLogger` is exported from `engine/logger.ts` and writes to `logs/audit-trail.jsonl`. Prefer `createLogger(component)` for new code; existing files like `engine/program.ts` still have raw `console.*` calls that should be migrated over time.
+- **Position state is persisted to SQLite.** `program.ts` uses a module-level `Map` (`trackedPositions`) for fast cycle access, but `savePosition`/`getPosition`/`deletePosition` from `DbService` are called on every state change (ENTER, EXIT, REBALANCE, fee claim). On startup, open positions are loaded from SQLite so the agent survives restarts without losing track of OOR positions or trailing-stop state.
+- **One ENTER per cycle in live mode.** `program.ts` line 488 silently skips `ENTER` if `trackedPositions.size > 0`. Easy to mistake for a bug.
+- **Live execution is a no-op without a wallet.** `WALLET_PRIVATE_KEY` is optional; with no key, `adapter.hasWallet()` returns false and `executeLive` exits early. Paper mode is the default and the only thing verified end-to-end.
+- **Coverage is misleading.** `vitest.config.ts` excludes `engine/index.ts`, `engine/program.ts`, `engine/adapter-service.ts`, `engine/services.ts`, `engine/types.ts`, `engine/logger*`, `engine/config-service.ts`, `engine/memory-service.ts`, `engine/screener-service.ts` from coverage. The 80% / 70% thresholds apply only to the remaining modules — not the whole engine.
+- **bin range widths.** `engine/strategy-service.ts:105` uses `±25` (binStep ≤ 10), `±20` (≤ 25), `±15` (otherwise). `CLAUDE.md` matches. `.agents/skills/dlmm-rebalancer.md` lists different numbers (`±15/±10/±7`) — the skill is wrong.
+- **Memory merge threshold.** README says "cosine distance < 0.08" (similarity > 0.92). ARCHITECTURE.md says "cosine similarity > 0.70". Code is the only source of truth here; if it matters, search `engine/memory-service.ts`/`engine/db-service.ts`.
+- **Memory TTLs are in code only.** `pattern` 90d, `warning` 60d, `outcome` 180d. The `ARCHITECTURE.md` table is correct; `README.md` only mentions patterns + warnings.
+
+## Storage & data files
+
+- `prism.db` (SQLite, gitignored) — positions, audit, blacklists, vec0 memory. Override with `SQLITE_DB_PATH`. Tests use `:memory:`.
+- `logs/audit-trail.jsonl` — appended by `createLogger` from `engine/logger.ts` (gitignored).
+- `bench/tmp-audit/` — created and rewritten by `bench/audit.test.ts`. Not in `.gitignore` but should be (it appears in `git status` after running tests).
+- `engine/data/deployer-blacklist.json`, `engine/data/token-blacklist.json` — default blacklist sources, override via `DEPLOYER_BLACKLIST_PATH` / `TOKEN_BLACKLIST_PATH`.
+
+## Env vars
+
+`.env.example` is incomplete. The full set `engine/config-service.ts` loads includes (with defaults):
+
+`PAPER_TRADING` (true), `SCAN_INTERVAL_MS` (600000), `MIN_POOL_TVL_USD` (50000), `MIN_FEE_IL_RATIO` (1.2), `TVL_DROP_EXIT_PCT` (0.30), `VOLUME_AUTH_THRESHOLD` (0.70), `MAX_CONCURRENT_POSITIONS` (5), `MIN_REBALANCE_INTERVAL_MS` (24h), `MIN_REBALANCE_NET_BENEFIT_USD` (10), `CONFIDENCE_THRESHOLD` (0.65), `PAPER_PORTFOLIO_USD` (10000), `MIN_BIN_UTILIZATION` (0.30), `MAX_REBALANCE_RANGE_BINS` (50), `WATCHLIST_POOLS` (comma-sep), `CLAUDE_MODEL`, `CHROMA_URL` (dead), `STOP_LOSS_PCT` (0.15), `OOR_GRACE_PERIOD_CYCLES` (3), `FEE_CLAIM_INTERVAL_MS` (24h), `ENABLE_POOL_DISCOVERY` (false), `DISCOVERY_MIN_TVL_USD` (100000), `DISCOVERY_MIN_FEE_RATIO` (1.5), `DEPLOYER_BLACKLIST_PATH`, `TOKEN_BLACKLIST_PATH`, `AUDIT_LOG_PATH` (`./logs/decision-audit.jsonl`), plus `ANTHROPIC_API_KEY`, `HELIUS_API_KEY`, `SOLANA_RPC_URL`, `WALLET_PRIVATE_KEY`.
+
+In test mode (`VITEST=true` or `NODE_ENV=test`), missing `ANTHROPIC_API_KEY` / `HELIUS_API_KEY` default to dummy values so the suite can run without real keys.
+
+## Testing
+
+- Tests live in `bench/*.test.ts`. There is no `tests/` directory.
+- The suite is Effect-Layer based: each test builds a `Layer.merge(AuditLive, DbLive(":memory:"))` and provides it to the system under test. Use this pattern for new tests.
+- `bench/audit.test.ts` mutates `bench/tmp-audit/` — do not commit it.
+- Coverage thresholds (80% / 70%) apply only to *included* files (see above). Don't read the coverage report as a project-wide signal.
+- No integration tests, no mocks for Meteora SDK. The `bench/strategy.test.ts` and `bench/risk.test.ts` cover the pure logic.
+
+## Key constraints
+
+- **No `any` types.** Use `unknown` and narrow. The repo has one intentional `as any` in `engine/adapter-service.ts` (parsed mint account data). Don't add more.
+- **No commits without explicit request.**
+- **Paper trading first** — wire all new execution paths to work in paper mode before live.
+- **Risk gates run in order with early return** in `engine/risk-service.ts`. Add new gates as numbered blocks and return on first rejection — do not accumulate flags.
+
+## Where to look first
+
+- New to the codebase: `engine/index.ts` → `engine/program.ts` → `engine/services.ts` → `engine/config-service.ts`.
+- Adding a service: `engine/services.ts` (Tag) + new `engine/x-service.ts` (Live Layer) + `buildLayer()` in `program.ts`.
+- Adding a risk check: `engine/risk-service.ts` `evaluateRisk()`, plus add a `RiskConfig` field in `program.ts` `buildLayer()`.
+- Changing decision rules: `evaluatePool` inside `engine/program.ts` `Effect.gen` (the logic is one ~280-line block, not split into helpers).

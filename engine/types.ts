@@ -92,10 +92,10 @@ export interface MemoryEntry {
   id: string;
   category: MemoryCategory;
   content: string;
-  poolAddress?: string;
-  outcome?: "profit" | "loss" | "neutral";
-  pnlUsd?: number;
-  confidence?: number;
+  poolAddress?: string | undefined;
+  outcome?: "profit" | "loss" | "neutral" | undefined;
+  pnlUsd?: number | undefined;
+  confidence?: number | undefined;
   createdAt: number;
   expiresAt: number;
 }
@@ -128,4 +128,3 @@ export interface BacktestResult {
   winRate: number;
   sharpeRatio: number;
 }
-

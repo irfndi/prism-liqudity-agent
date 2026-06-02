@@ -1,4 +1,5 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
+
 export default defineConfig({
   entry: ["engine/index.ts"],
   format: ["esm"],
@@ -7,6 +8,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   dts: true,
-  banner: { js: "#!/usr/bin/env node" },
+  banner: "#!/usr/bin/env node",
 });
-

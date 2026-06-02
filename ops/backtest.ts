@@ -5,8 +5,7 @@
  * Usage: bun run backtest
  */
 import { createLogger } from "../engine/logger.js";
-import { DLMMStrategy } from "../engine/probes/dlmm.js";
-import { config } from "../engine/config.js";
+import { DLMMStrategy } from "../engine/strategy-service.js";
 import type { BacktestResult, PoolState, BinArray } from "../engine/types.js";
 
 const log = createLogger("Backtest");
@@ -18,11 +17,7 @@ interface HistoryTick {
   binArray: BinArray;
 }
 
-function generateMockHistory(
-  poolAddress: string,
-  days: number,
-  startTvl: number
-): HistoryTick[] {
+function generateMockHistory(poolAddress: string, days: number, startTvl: number): HistoryTick[] {
   const history: HistoryTick[] = [];
   const intervalMs = 10 * 60 * 1000; // 10 min
   const ticks = (days * 24 * 60 * 60 * 1000) / intervalMs;
@@ -54,7 +49,7 @@ function generateMockHistory(
     const shock = (Math.random() - 0.5) * volatility * 2;
     tvl *= 1 + (Math.random() - 0.49) * 0.02;
     price *= 1 + trend + shock;
-    activeBin += Math.floor((trend * 200 + shock * 100) + (Math.random() - 0.5) * 10);
+    activeBin += Math.floor(trend * 200 + shock * 100 + (Math.random() - 0.5) * 10);
 
     const pool: PoolState = {
       address: poolAddress,
@@ -96,17 +91,17 @@ function generateMockHistory(
 // ─── Run backtest with configurable parameters ────────────────────────────────
 
 interface BacktestConfig {
-  halfWidth: number;          // bins each side of active bin
-  driftThreshold: number;     // % of half-width before rebalance triggers
-  minHoldTicks: number;       // minimum ticks between rebalances
-  minNetBenefitUsd: number;   // simulated net benefit threshold
-  maxRebalances: number;      // cap to prevent churn
+  halfWidth: number; // bins each side of active bin
+  driftThreshold: number; // % of half-width before rebalance triggers
+  minHoldTicks: number; // minimum ticks between rebalances
+  minNetBenefitUsd: number; // simulated net benefit threshold
+  maxRebalances: number; // cap to prevent churn
 }
 
 async function runBacktest(
   poolAddress: string,
   days = 30,
-  cfg: BacktestConfig
+  cfg: BacktestConfig,
 ): Promise<BacktestResult> {
   log.info("Starting backtest", {
     pool: poolAddress,
@@ -117,7 +112,7 @@ async function runBacktest(
     minNetBenefitUsd: cfg.minNetBenefitUsd,
   });
 
-  const strategy = new DLMMStrategy();
+  const strategy = DLMMStrategy;
   const history = generateMockHistory(poolAddress, days, 100_000);
 
   let rebalances = 0;
@@ -145,7 +140,7 @@ async function runBacktest(
 
     // Pre-filter
     const auth = strategy.checkVolumeAuthenticity(tick.pool);
-    if (!strategy.passesPreFilter(tick.pool, auth.score, metrics.binUtilization)) {
+    if (!strategy.passesPreFilter(tick.pool, auth.score, metrics.binUtilization, 0, 0, 0)) {
       previousTvl = tick.pool.tvlUsd;
       continue;
     }
@@ -153,7 +148,8 @@ async function runBacktest(
     const feeIl = metrics.feeIlRatio;
 
     // Fees accrue if active bin is inside our POSITION range
-    const inRange = tick.pool.activeBinId >= currentLowerBinId && tick.pool.activeBinId <= currentUpperBinId;
+    const inRange =
+      tick.pool.activeBinId >= currentLowerBinId && tick.pool.activeBinId <= currentUpperBinId;
     const feesThisTick = inRange ? tick.pool.fees24hUsd / (24 * 6) : 0;
     totalFees += feesThisTick;
     portfolioValue += feesThisTick;
@@ -164,7 +160,8 @@ async function runBacktest(
     const binDrift = Math.abs(tick.pool.activeBinId - positionCenter) / (positionHalfWidth || 1);
 
     const ticksSinceRebalance = i - lastRebalanceTick;
-    const canRebalance = hasPosition && rebalances < cfg.maxRebalances && ticksSinceRebalance >= cfg.minHoldTicks;
+    const canRebalance =
+      hasPosition && rebalances < cfg.maxRebalances && ticksSinceRebalance >= cfg.minHoldTicks;
 
     if (canRebalance && binDrift > cfg.driftThreshold) {
       // Simulate rebalance cost
@@ -192,7 +189,9 @@ async function runBacktest(
         let feesInNextWindow = 0;
         for (let j = i + 1; j < Math.min(i + cfg.minHoldTicks, history.length); j++) {
           const nextTick = history[j]!;
-          const nextInRange = nextTick.pool.activeBinId >= currentLowerBinId && nextTick.pool.activeBinId <= currentUpperBinId;
+          const nextInRange =
+            nextTick.pool.activeBinId >= currentLowerBinId &&
+            nextTick.pool.activeBinId <= currentUpperBinId;
           if (nextInRange) {
             feesInNextWindow += nextTick.pool.fees24hUsd / (24 * 6);
           }
@@ -247,19 +246,35 @@ async function runBacktest(
 
 // ─── Grid search over parameter combinations ────────────────────────────────
 
-const testPools = [
-  "5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6",
-];
+const testPools = ["5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6"];
 
 const configs: BacktestConfig[] = [
   // Conservative: wide range, high drift threshold, long hold
-  { halfWidth: 25, driftThreshold: 0.75, minHoldTicks: 144, minNetBenefitUsd: 15, maxRebalances: 20 },
+  {
+    halfWidth: 25,
+    driftThreshold: 0.75,
+    minHoldTicks: 144,
+    minNetBenefitUsd: 15,
+    maxRebalances: 20,
+  },
   // Balanced
-  { halfWidth: 20, driftThreshold: 0.65, minHoldTicks: 72, minNetBenefitUsd: 10, maxRebalances: 30 },
+  {
+    halfWidth: 20,
+    driftThreshold: 0.65,
+    minHoldTicks: 72,
+    minNetBenefitUsd: 10,
+    maxRebalances: 30,
+  },
   // Aggressive: tight range, lower threshold, shorter hold
   { halfWidth: 15, driftThreshold: 0.55, minHoldTicks: 36, minNetBenefitUsd: 5, maxRebalances: 50 },
   // Very wide, very patient
-  { halfWidth: 35, driftThreshold: 0.80, minHoldTicks: 288, minNetBenefitUsd: 25, maxRebalances: 10 },
+  {
+    halfWidth: 35,
+    driftThreshold: 0.8,
+    minHoldTicks: 288,
+    minNetBenefitUsd: 25,
+    maxRebalances: 10,
+  },
 ];
 
 for (const pool of testPools) {

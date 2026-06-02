@@ -27,7 +27,7 @@ The decision is intercepted by a risk gate before anything happens on-chain. Con
 
 ## Memory
 
-The agent remembers. Every outcome -- fee earned, IL incurred, bad pool flagged -- gets stored in a Chroma vector database and retrieved by cosine similarity on the next relevant cycle. Entries expire automatically (90 days for patterns, 60 for warnings). Near-duplicate memories merge instead of pile up.
+The agent remembers. Every outcome -- fee earned, IL incurred, bad pool flagged -- gets stored in an SQLite vector table (`sqlite-vec`) and retrieved by cosine similarity on the next relevant cycle. Entries expire automatically (90 days for patterns, 60 for warnings, 180 for outcomes). Near-duplicate memories merge instead of pile up.
 
 This is what makes it self-improving: it gets slower to enter pools it has been burned by before, and faster to recognize patterns it has profited from.
 
@@ -42,7 +42,6 @@ git clone https://github.com/irfndi/prism-dlmm
 cd prism-dlmm
 bun install
 bun run setup            # interactive .env wizard
-docker-compose up -d     # starts Chroma
 bun run dev              # paper trading by default
 ```
 
@@ -65,6 +64,8 @@ Key `.env` variables:
 | `VOLUME_AUTH_THRESHOLD` | `0.70` | Skip pools below this authenticity score |
 | `SCAN_INTERVAL_MS` | `600000` | Scan frequency (default 10 min) |
 | `CONFIDENCE_THRESHOLD` | `0.65` | Minimum agent confidence to act |
+| `TRAILING_STOP_PCT` | `0.10` | Drawdown from peak that triggers EXIT |
+| `SQLITE_DB_PATH` | `./prism.db` | SQLite database file path |
 
 ## Risk gates
 
@@ -82,8 +83,8 @@ Decisions pass through checks in order before any on-chain action:
 
 - **Runtime**: Bun 1.2
 - **Strategy**: Rule-based engine with DLMM probes
-- **Memory**: ChromaDB, cosine distance merge threshold 0.08, 30-day recency decay
+- **Memory**: SQLite + sqlite-vec, cosine distance merge threshold 0.08, 30-day recency decay
 - **On-chain**: `@meteora-ag/dlmm` SDK, Helius RPC
-- **Config**: Zod schema validation, hard exit on invalid env
+- **Config**: Effect-TS Config module with `orElseSucceed` fallbacks; every value has a sensible default and test mode auto-injects dummy API keys
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full component map and agent loop.
