@@ -36,6 +36,13 @@ export interface AppConfig {
 
 export class ConfigService extends Context.Tag("ConfigService")<ConfigService, AppConfig>() {}
 
+function validatedNumber(name: string, min: number, fallback: number) {
+  return Config.number(name).pipe(
+    Effect.map((n) => (Number.isFinite(n) && n >= min ? n : fallback)),
+    Effect.orElseSucceed(() => fallback),
+  );
+}
+
 const loadConfig = Effect.gen(function* () {
   const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
 
@@ -59,42 +66,26 @@ const loadConfig = Effect.gen(function* () {
   const paperTrading = yield* Config.boolean("PAPER_TRADING").pipe(
     Effect.orElseSucceed(() => true),
   );
-  const scanIntervalMs = yield* Config.number("SCAN_INTERVAL_MS").pipe(
-    Effect.orElseSucceed(() => 600_000),
+  const scanIntervalMs = yield* validatedNumber("SCAN_INTERVAL_MS", 10_000, 600_000);
+  const minPoolTvlUsd = yield* validatedNumber("MIN_POOL_TVL_USD", 0, 50_000);
+  const minFeeIlRatio = yield* validatedNumber("MIN_FEE_IL_RATIO", 0, 1.2);
+  const tvlDropExitPct = yield* validatedNumber("TVL_DROP_EXIT_PCT", 0, 0.3);
+  const volumeAuthThreshold = yield* validatedNumber("VOLUME_AUTH_THRESHOLD", 0, 0.7);
+  const maxConcurrentPositions = yield* validatedNumber("MAX_CONCURRENT_POSITIONS", 1, 5);
+  const minRebalanceIntervalMs = yield* validatedNumber(
+    "MIN_REBALANCE_INTERVAL_MS",
+    0,
+    24 * 60 * 60 * 1000,
   );
-  const minPoolTvlUsd = yield* Config.number("MIN_POOL_TVL_USD").pipe(
-    Effect.orElseSucceed(() => 50_000),
+  const minRebalanceNetBenefitUsd = yield* validatedNumber(
+    "MIN_REBALANCE_NET_BENEFIT_USD",
+    0,
+    10,
   );
-  const minFeeIlRatio = yield* Config.number("MIN_FEE_IL_RATIO").pipe(
-    Effect.orElseSucceed(() => 1.2),
-  );
-  const tvlDropExitPct = yield* Config.number("TVL_DROP_EXIT_PCT").pipe(
-    Effect.orElseSucceed(() => 0.3),
-  );
-  const volumeAuthThreshold = yield* Config.number("VOLUME_AUTH_THRESHOLD").pipe(
-    Effect.orElseSucceed(() => 0.7),
-  );
-  const maxConcurrentPositions = yield* Config.number("MAX_CONCURRENT_POSITIONS").pipe(
-    Effect.orElseSucceed(() => 5),
-  );
-  const minRebalanceIntervalMs = yield* Config.number("MIN_REBALANCE_INTERVAL_MS").pipe(
-    Effect.orElseSucceed(() => 24 * 60 * 60 * 1000),
-  );
-  const minRebalanceNetBenefitUsd = yield* Config.number("MIN_REBALANCE_NET_BENEFIT_USD").pipe(
-    Effect.orElseSucceed(() => 10),
-  );
-  const confidenceThreshold = yield* Config.number("CONFIDENCE_THRESHOLD").pipe(
-    Effect.orElseSucceed(() => 0.65),
-  );
-  const paperPortfolioUsd = yield* Config.number("PAPER_PORTFOLIO_USD").pipe(
-    Effect.orElseSucceed(() => 10_000),
-  );
-  const minBinUtilization = yield* Config.number("MIN_BIN_UTILIZATION").pipe(
-    Effect.orElseSucceed(() => 0.3),
-  );
-  const maxRebalanceRangeBins = yield* Config.number("MAX_REBALANCE_RANGE_BINS").pipe(
-    Effect.orElseSucceed(() => 50),
-  );
+  const confidenceThreshold = yield* validatedNumber("CONFIDENCE_THRESHOLD", 0, 0.65);
+  const paperPortfolioUsd = yield* validatedNumber("PAPER_PORTFOLIO_USD", 1, 10_000);
+  const minBinUtilization = yield* validatedNumber("MIN_BIN_UTILIZATION", 0, 0.3);
+  const maxRebalanceRangeBins = yield* validatedNumber("MAX_REBALANCE_RANGE_BINS", 1, 50);
   const watchlistPoolsRaw = yield* Config.string("WATCHLIST_POOLS").pipe(
     Effect.orElseSucceed(() => ""),
   );
@@ -103,25 +94,19 @@ const loadConfig = Effect.gen(function* () {
   );
 
   // New feature configs
-  const stopLossPct = yield* Config.number("STOP_LOSS_PCT").pipe(Effect.orElseSucceed(() => 0.15));
-  const trailingStopPct = yield* Config.number("TRAILING_STOP_PCT").pipe(
-    Effect.orElseSucceed(() => 0.1),
-  );
-  const oorGracePeriodCycles = yield* Config.number("OOR_GRACE_PERIOD_CYCLES").pipe(
-    Effect.orElseSucceed(() => 3),
-  );
-  const feeClaimIntervalMs = yield* Config.number("FEE_CLAIM_INTERVAL_MS").pipe(
-    Effect.orElseSucceed(() => 24 * 60 * 60 * 1000),
+  const stopLossPct = yield* validatedNumber("STOP_LOSS_PCT", 0, 0.15);
+  const trailingStopPct = yield* validatedNumber("TRAILING_STOP_PCT", 0, 0.1);
+  const oorGracePeriodCycles = yield* validatedNumber("OOR_GRACE_PERIOD_CYCLES", 0, 3);
+  const feeClaimIntervalMs = yield* validatedNumber(
+    "FEE_CLAIM_INTERVAL_MS",
+    0,
+    24 * 60 * 60 * 1000,
   );
   const enablePoolDiscovery = yield* Config.boolean("ENABLE_POOL_DISCOVERY").pipe(
     Effect.orElseSucceed(() => false),
   );
-  const discoveryMinTvlUsd = yield* Config.number("DISCOVERY_MIN_TVL_USD").pipe(
-    Effect.orElseSucceed(() => 100_000),
-  );
-  const discoveryMinFeeRatio = yield* Config.number("DISCOVERY_MIN_FEE_RATIO").pipe(
-    Effect.orElseSucceed(() => 1.5),
-  );
+  const discoveryMinTvlUsd = yield* validatedNumber("DISCOVERY_MIN_TVL_USD", 0, 100_000);
+  const discoveryMinFeeRatio = yield* validatedNumber("DISCOVERY_MIN_FEE_RATIO", 0, 1.5);
   const deployerBlacklistPath = yield* Config.string("DEPLOYER_BLACKLIST_PATH").pipe(
     Effect.orElseSucceed(() => "./engine/data/deployer-blacklist.json"),
   );

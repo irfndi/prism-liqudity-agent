@@ -111,9 +111,9 @@ export interface StrategyApi {
     pool: PoolState,
     authScore: number,
     binUtilization: number,
-    minTvlUsd?: number,
-    minAuthScore?: number,
-    minBinUtilization?: number,
+    minTvlUsd: number,
+    minAuthScore: number,
+    minBinUtilization: number,
   ) => boolean;
 }
 

@@ -102,9 +102,9 @@ export const DLMMStrategy: StrategyApi = {
     pool: PoolState,
     authScore: number,
     binUtilization: number,
-    minTvlUsd = 0,
-    minAuthScore = 0,
-    minBinUtilization = 0,
+    minTvlUsd: number,
+    minAuthScore: number,
+    minBinUtilization: number,
   ): boolean {
     return (
       pool.tvlUsd > 0 &&

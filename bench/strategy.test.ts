@@ -89,22 +89,22 @@ describe("DLMMStrategy", () => {
   describe("passesPreFilter", () => {
     it("returns true for valid pool", () => {
       const pool = makePool({ tvlUsd: 100_000 });
-      expect(DLMMStrategy.passesPreFilter(pool, 0.8, 0.5)).toBe(true);
+      expect(DLMMStrategy.passesPreFilter(pool, 0.8, 0.5, 0, 0, 0)).toBe(true);
     });
 
     it("returns false for zero TVL", () => {
       const pool = makePool({ tvlUsd: 0 });
-      expect(DLMMStrategy.passesPreFilter(pool, 0.8, 0.5)).toBe(false);
+      expect(DLMMStrategy.passesPreFilter(pool, 0.8, 0.5, 0, 0, 0)).toBe(false);
     });
 
     it("returns false for negative auth score", () => {
       const pool = makePool({ tvlUsd: 100_000 });
-      expect(DLMMStrategy.passesPreFilter(pool, -0.1, 0.5)).toBe(false);
+      expect(DLMMStrategy.passesPreFilter(pool, -0.1, 0.5, 0, 0, 0)).toBe(false);
     });
 
     it("returns false for negative bin utilization", () => {
       const pool = makePool({ tvlUsd: 100_000 });
-      expect(DLMMStrategy.passesPreFilter(pool, 0.8, -0.1)).toBe(false);
+      expect(DLMMStrategy.passesPreFilter(pool, 0.8, -0.1, 0, 0, 0)).toBe(false);
     });
 
     it("respects threshold parameters", () => {
