@@ -369,6 +369,6 @@ app.post("/v1/issue", async (c) => {
 // Export handler for Cloudflare Workers
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    return handle(app)(request, env, ctx);
+    return app.fetch(request, env, ctx);
   },
 };

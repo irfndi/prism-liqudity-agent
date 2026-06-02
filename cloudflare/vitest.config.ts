@@ -5,7 +5,7 @@ export default defineWorkersConfig({
     pool: "@cloudflare/vitest-pool-workers",
     poolOptions: {
       workers: {
-        wrangler: { configPath: "./wrangler.telegram.toml" },
+          wrangler: { configPath: "./wrangler.telegram.test.toml" },
       },
     },
   },

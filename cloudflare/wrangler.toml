@@ -27,6 +27,22 @@ index_name = "prism-memory"
 # Environment Variables
 [vars]
 ENVIRONMENT = "production"
+TELEGRAM_WEBHOOK_URL = "https://prism-telegram-bot.irfndi.workers.dev/webhook"
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
 
 # Secrets (set via wrangler secret put)
 # wrangler secret put FEE_WALLET_ADDRESS
