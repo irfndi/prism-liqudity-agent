@@ -19,7 +19,7 @@ chroma-data/
 *.db
 *.db-shm
 *.db-wal
-data/
+/data/
 
 # Editor
 .vscode/

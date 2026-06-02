@@ -480,7 +480,7 @@ export const program = Effect.gen(function* () {
 
   const executePaper = (
     decision: AgentDecision,
-    pool: { activeBinId: number; tokenXSymbol: string; tokenYSymbol: string },
+    pool: { activeBinId: number; binStep: number; tokenXSymbol: string; tokenYSymbol: string },
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (decision.action === "ENTER" && decision.positionSizeUsd) {
@@ -528,7 +528,7 @@ export const program = Effect.gen(function* () {
 
   const executeLive = (
     decision: AgentDecision,
-    pool: { activeBinId: number; tokenXSymbol: string; tokenYSymbol: string },
+    pool: { activeBinId: number; binStep: number; tokenXSymbol: string; tokenYSymbol: string },
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (!adapter.hasWallet()) {
@@ -555,7 +555,7 @@ export const program = Effect.gen(function* () {
       }
 
       if (decision.action === "ENTER" && decision.positionSizeUsd) {
-        const recommended = strategy.recommendBinRange(pool.activeBinId, 10);
+        const recommended = strategy.recommendBinRange(pool.activeBinId, pool.binStep);
         const result = yield* adapter
           .enterPosition(
             decision.poolAddress,
@@ -687,6 +687,7 @@ export const program = Effect.gen(function* () {
             Effect.catchAll(() => Effect.void),
           );
           pos.lastFeeClaimAt = Date.now();
+          yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
         }
       }
     });
