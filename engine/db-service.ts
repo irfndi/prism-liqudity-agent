@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { Database } from "bun:sqlite";
 import { createDatabase } from "./db.js";
 import { getEmbedding } from "./embeddings.js";
-import type { MemoryEntry, MemoryCategory, Position } from "./types.js";
+import type { MemoryEntry, MemoryCategory, PoolSnapshot, Position, BinArray } from "./types.js";
 import { randomUUID } from "crypto";
 
 export interface DbApi {
@@ -48,6 +48,15 @@ export interface DbApi {
     poolAddress?: string,
   ) => Effect.Effect<ReadonlyArray<MemoryEntry>, unknown>;
   readonly pruneMemory: () => Effect.Effect<number, unknown>;
+
+  readonly saveSnapshot: (snapshot: PoolSnapshot) => Effect.Effect<void, unknown>;
+  readonly getSnapshots: (
+    poolAddress: string,
+    startMs: number,
+    endMs: number,
+  ) => Effect.Effect<ReadonlyArray<PoolSnapshot>, unknown>;
+  readonly getSnapshotPools: () => Effect.Effect<ReadonlyArray<string>, unknown>;
+  readonly getSnapshotCount: (poolAddress: string) => Effect.Effect<number, unknown>;
 }
 
 export interface PositionRecord {
@@ -105,6 +114,29 @@ function serializeJson(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+// BinArray.bins[].reserveX/reserveY/liquiditySupply are bigint, which
+// JSON.stringify rejects with "TypeError: Do not know how to serialize a BigInt".
+// Use a replacer that encodes them as decimal strings; readSnapshot reverses it.
+function bigintReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? value.toString() : value;
+}
+
+function serializeBinArray(binArray: BinArray): string {
+  return JSON.stringify(binArray, bigintReplacer);
+}
+
+function deserializeBinArray(json: string): BinArray {
+  const raw = JSON.parse(json) as { bins: Array<Record<string, unknown>> };
+  raw.bins = raw.bins.map((b) => ({
+    binId: Number(b.binId),
+    price: Number(b.price),
+    reserveX: BigInt(b.reserveX as string),
+    reserveY: BigInt(b.reserveY as string),
+    liquiditySupply: BigInt(b.liquiditySupply as string),
+  }));
+  return raw as unknown as BinArray;
 }
 
 export const DbLive = (dbPath?: string) =>
@@ -351,6 +383,63 @@ export const DbLive = (dbPath?: string) =>
             }
             return rows.length;
           }),
+
+        saveSnapshot: (snapshot) =>
+          Effect.sync(() => {
+            runOne(
+              db,
+              `INSERT INTO pool_snapshots (
+              pool_address, timestamp, active_bin_id, tvl_usd, volume_24h_usd,
+              fees_24h_usd, apr, current_price, bin_step,
+              token_x_symbol, token_y_symbol, bin_array_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              snapshot.poolAddress,
+              snapshot.timestamp,
+              snapshot.activeBinId,
+              snapshot.tvlUsd,
+              snapshot.volume24hUsd,
+              snapshot.fees24hUsd,
+              snapshot.apr,
+              snapshot.currentPrice,
+              snapshot.binStep,
+              snapshot.tokenXSymbol,
+              snapshot.tokenYSymbol,
+              serializeBinArray(snapshot.binArray),
+            );
+          }),
+
+        getSnapshots: (poolAddress, startMs, endMs) =>
+          Effect.sync(() => {
+            const rows = queryAll<Record<string, unknown>>(
+              db,
+              `SELECT * FROM pool_snapshots
+               WHERE pool_address = ? AND timestamp >= ? AND timestamp <= ?
+               ORDER BY timestamp ASC`,
+              poolAddress,
+              startMs,
+              endMs,
+            );
+            return rows.map(rowToSnapshot);
+          }),
+
+        getSnapshotPools: () =>
+          Effect.sync(() => {
+            const rows = queryAll<{ pool_address: string }>(
+              db,
+              "SELECT DISTINCT pool_address FROM pool_snapshots ORDER BY pool_address",
+            );
+            return rows.map((r) => r.pool_address);
+          }),
+
+        getSnapshotCount: (poolAddress) =>
+          Effect.sync(() => {
+            const row = queryOne<{ n: number }>(
+              db,
+              "SELECT COUNT(*) as n FROM pool_snapshots WHERE pool_address = ?",
+              poolAddress,
+            );
+            return row?.n ?? 0;
+          }),
       };
 
       return api;
@@ -375,6 +464,23 @@ function rowToPosition(row: Record<string, unknown>): PositionRecord {
     trailingStopThreshold: row.trailing_stop_threshold != null ? Number(row.trailing_stop_threshold) : null,
     highestValueUsd: row.highest_value_usd != null ? Number(row.highest_value_usd) : null,
     lastRebalanceAt: Number(row.last_rebalance_at ?? 0),
+  };
+}
+
+function rowToSnapshot(row: Record<string, unknown>): PoolSnapshot {
+  return {
+    poolAddress: String(row.pool_address),
+    timestamp: Number(row.timestamp),
+    activeBinId: Number(row.active_bin_id),
+    tvlUsd: Number(row.tvl_usd),
+    volume24hUsd: Number(row.volume_24h_usd),
+    fees24hUsd: Number(row.fees_24h_usd),
+    apr: Number(row.apr),
+    currentPrice: Number(row.current_price),
+    binStep: Number(row.bin_step),
+    tokenXSymbol: String(row.token_x_symbol ?? ""),
+    tokenYSymbol: String(row.token_y_symbol ?? ""),
+    binArray: deserializeBinArray(String(row.bin_array_json)),
   };
 }
 

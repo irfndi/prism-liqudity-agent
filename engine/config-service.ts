@@ -33,6 +33,7 @@ export interface AppConfig {
   readonly deployerBlacklistPath: string;
   readonly tokenBlacklistPath: string;
   readonly sqliteDbPath: string;
+  readonly enableSnapshotCapture: boolean;
 }
 
 export class ConfigService extends Context.Tag("ConfigService")<ConfigService, AppConfig>() {}
@@ -117,6 +118,9 @@ const loadConfig = Effect.gen(function* () {
   const sqliteDbPath = yield* Config.string("SQLITE_DB_PATH").pipe(
     Effect.orElseSucceed(() => "./prism.db"),
   );
+  const enableSnapshotCapture = yield* Config.boolean("ENABLE_SNAPSHOT_CAPTURE").pipe(
+    Effect.orElseSucceed(() => false),
+  );
 
   const watchlistPools = watchlistPoolsRaw
     .split(",")
@@ -154,6 +158,7 @@ const loadConfig = Effect.gen(function* () {
     deployerBlacklistPath,
     tokenBlacklistPath,
     sqliteDbPath,
+    enableSnapshotCapture,
   };
 
   return cfg;

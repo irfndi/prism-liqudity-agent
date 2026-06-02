@@ -140,6 +140,33 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
       }
     },
   },
+  {
+    version: 4,
+    name: "add_pool_snapshots",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pool_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pool_address TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          active_bin_id INTEGER NOT NULL,
+          tvl_usd REAL NOT NULL,
+          volume_24h_usd REAL NOT NULL,
+          fees_24h_usd REAL NOT NULL,
+          apr REAL NOT NULL,
+          current_price REAL NOT NULL,
+          bin_step INTEGER NOT NULL,
+          token_x_symbol TEXT,
+          token_y_symbol TEXT,
+          bin_array_json TEXT NOT NULL
+        );
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_snapshots_pool_time
+          ON pool_snapshots(pool_address, timestamp);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database) {

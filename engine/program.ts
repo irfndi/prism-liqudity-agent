@@ -191,6 +191,25 @@ export const program = Effect.gen(function* () {
       const pool = yield* adapter.getPoolState(poolAddress);
       const binArray = yield* adapter.getBinArray(poolAddress);
 
+      if (config.enableSnapshotCapture && config.paperTrading) {
+        yield* db
+          .saveSnapshot({
+            poolAddress,
+            timestamp: pool.timestamp,
+            activeBinId: pool.activeBinId,
+            tvlUsd: pool.tvlUsd,
+            volume24hUsd: pool.volume24hUsd,
+            fees24hUsd: pool.fees24hUsd,
+            apr: pool.apr,
+            currentPrice: pool.currentPrice,
+            binStep: pool.binStep,
+            tokenXSymbol: pool.tokenXSymbol,
+            tokenYSymbol: pool.tokenYSymbol,
+            binArray: { ...binArray, binStep: pool.binStep },
+          })
+          .pipe(Effect.catchAll(() => Effect.void));
+      }
+
       // Blacklist check (token mints only; deployer info not yet fetched)
       // TODO: fetch token deployer/authority from on-chain metadata and pass to checkPool
       yield* blacklist
