@@ -49,7 +49,12 @@ function getCredentials() {
   if (!fs.existsSync(CREDENTIALS_FILE)) {
     return null;
   }
-  return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf-8"));
+  try {
+    return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf-8"));
+  } catch (err) {
+    console.error("Error: Failed to parse credentials file. Run 'prism register' first.");
+    process.exit(1);
+  }
 }
 
 export const subscriptionCommand = new Command("subscription")
@@ -152,7 +157,7 @@ export const subscriptionCommand = new Command("subscription")
       .option("--tier <tier>", "Tier (free|pro|fund)", "pro")
       .action((options) => {
         const nav = parseFloat(options.nav);
-        const days = parseInt(options.days);
+        const days = parseInt(options.days, 10);
         const tierName = options.tier;
 
         // Import revenue service

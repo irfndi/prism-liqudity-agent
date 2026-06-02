@@ -32,7 +32,7 @@ export const TIERS: Record<string, TierConfig> = {
   },
   fund: {
     name: "fund",
-    maxFreeSol: Infinity,
+    maxFreeSol: Number.MAX_SAFE_INTEGER,
     managementFeeRate: 0.02, // 2% annually
     performanceFeeRate: 0.2, // 20% of profits
     earlyRedemptionFeeRate: 0.1, // 10%

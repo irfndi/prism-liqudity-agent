@@ -108,7 +108,7 @@ export const setupCommand = new Command("setup")
     ].join("\n");
 
     const envPath = path.resolve(".env");
-    fs.writeFileSync(envPath, envContent);
+    fs.writeFileSync(envPath, envContent, { mode: 0o600 });
 
     if (!isNonInteractive) {
       p.note(
