@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/engine/index.js",
     "dev": "bun run --watch engine/index.ts",
-    "build": "tsdown",
+    "build": "bunx --bun tsdown",
     "setup": "bun run ops/setup.ts",
     "backtest": "bun run ops/backtest.ts",
     "test": "bunx --bun vitest run",
