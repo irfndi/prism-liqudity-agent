@@ -32,6 +32,21 @@ export interface PoolState {
   timestamp: number;
 }
 
+export interface PoolSnapshot {
+  poolAddress: string;
+  timestamp: number;
+  activeBinId: number;
+  tvlUsd: number;
+  volume24hUsd: number;
+  fees24hUsd: number;
+  apr: number;
+  currentPrice: number;
+  binStep: number;
+  tokenXSymbol: string;
+  tokenYSymbol: string;
+  binArray: BinArray;
+}
+
 export interface PoolMetrics {
   pool: PoolState;
   binArray: BinArray;

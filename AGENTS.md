@@ -107,10 +107,21 @@ These are the high-cost mistakes. Do not trust stale prose — verify in code.
 
 ## Storage & data files
 
-- `prism.db` (SQLite, gitignored) — positions, audit, blacklists, vec0 memory. Override with `SQLITE_DB_PATH`. Tests use `:memory:`.
+- `prism.db` (SQLite, gitignored) — positions, audit, blacklists, vec0 memory, **pool_snapshots**. Override with `SQLITE_DB_PATH`. Tests use `:memory:`.
 - `logs/audit-trail.jsonl` — appended by `createLogger` from `engine/logger.ts` (gitignored).
 - `bench/tmp-audit/` — created and rewritten by `bench/audit.test.ts`. Not in `.gitignore` but should be (it appears in `git status` after running tests).
 - `engine/data/deployer-blacklist.json`, `engine/data/token-blacklist.json` — default blacklist sources, override via `DEPLOYER_BLACKLIST_PATH` / `TOKEN_BLACKLIST_PATH`.
+
+## Snapshot capture & replay backtest
+
+The agent can dump a full snapshot (pool state + bin array) into `pool_snapshots` on every cycle. This lets you replay real on-chain data through the strategy offline.
+
+- **Enable**: set `ENABLE_SNAPSHOT_CAPTURE=true` in `.env` (only works when `PAPER_TRADING=true`).
+- **Table**: `pool_snapshots` (migration v4). Fields: `pool_address`, `timestamp`, `active_bin_id`, `tvl_usd`, `volume_24h_usd`, `fees_24h_usd`, `apr`, `current_price`, `bin_step`, `token_x_symbol`, `token_y_symbol`, `bin_array_json`.
+- **Bigints in bin arrays** are serialized via a custom `bigintReplacer` and deserialized back to `BigInt` — round-trip is verified in `bench/snapshot-replay.test.ts`.
+- **Backtest replay**: `bun run backtest --source replay --db ./prism.db --days 7 --pools <addr>`. Reads snapshots from the DB and runs the same strategy loop as the synthetic baseline.
+- **Backtest synthetic**: `bun run backtest --source synthetic --days 7` (default). Deterministic mock generator, kept as regression baseline.
+- **API**: `DbApi.saveSnapshot`, `getSnapshots(pool, startMs, endMs)`, `getSnapshotPools()`, `getSnapshotCount(pool)` — defined in both `services.ts` (consumer) and `db-service.ts` (implementation).
 
 ## Env vars
 

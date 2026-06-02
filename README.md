@@ -48,7 +48,16 @@ bun run dev              # paper trading by default
 To run the historical simulation:
 
 ```bash
-bun run backtest
+bun run backtest                              # synthetic, 7 days
+bun run backtest --days 30 --pools <addr>    # custom range
+```
+
+### Replay backtest from live snapshots
+
+Set `ENABLE_SNAPSHOT_CAPTURE=true` while the agent runs in paper mode. Every cycle dumps the full pool state + bin array into `pool_snapshots` in SQLite. Later, replay that real on-chain data through the strategy:
+
+```bash
+bun run backtest --source replay --db ./prism.db --days 7 --pools <addr>
 ```
 
 ## Configuration
@@ -66,6 +75,7 @@ Key `.env` variables:
 | `CONFIDENCE_THRESHOLD` | `0.65` | Minimum agent confidence to act |
 | `TRAILING_STOP_PCT` | `0.10` | Drawdown from peak that triggers EXIT |
 | `SQLITE_DB_PATH` | `./prism.db` | SQLite database file path |
+| `ENABLE_SNAPSHOT_CAPTURE` | `false` | Dump pool snapshots to DB (paper only) |
 
 ## Risk gates
 

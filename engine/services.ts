@@ -9,6 +9,7 @@ import type {
   MemoryCategory,
   MemoryEntry,
   PoolMetrics,
+  PoolSnapshot,
   PoolState,
   Position,
 } from "./types.js";
@@ -359,6 +360,15 @@ export interface DbApi {
     poolAddress?: string,
   ) => Effect.Effect<ReadonlyArray<MemoryEntry>, unknown>;
   readonly pruneMemory: () => Effect.Effect<number, unknown>;
+  readonly saveSnapshot: (snapshot: PoolSnapshot) => Effect.Effect<void, unknown>;
+  readonly getSnapshots: (
+    poolAddress: string,
+    startMs: number,
+    endMs: number,
+  ) => Effect.Effect<ReadonlyArray<PoolSnapshot>, unknown>;
+  readonly getSnapshotPools: () => Effect.Effect<ReadonlyArray<string>, unknown>;
+  readonly getSnapshotCount: (poolAddress: string) => Effect.Effect<number, unknown>;
+  readonly pruneSnapshots: (olderThanMs: number) => Effect.Effect<number, unknown>;
 }
 
 export class DbService extends Context.Tag("DbService")<DbService, DbApi>() {}
