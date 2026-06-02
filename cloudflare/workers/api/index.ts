@@ -32,8 +32,11 @@ const CacheLive = (cache: KVNamespace) =>
   Layer.succeed(CacheService, { cache });
 
 // Helper to generate IDs
-const generateId = () =>
-  `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+const generateId = () => {
+  const randomBytes = new Uint8Array(8);
+  crypto.getRandomValues(randomBytes);
+  return `${Date.now()}-${Array.from(randomBytes).map(b => b.toString(36).padStart(2, '0')).join('')}`;
+};
 
 // Helper to hash API keys
 const hashKey = async (key: string): Promise<string> => {
@@ -120,7 +123,9 @@ const whoamiHandler = (db: D1Database, userId: string) =>
 // Link Telegram start handler
 const linkTelegramStartHandler = (db: D1Database, userId: string) =>
   Effect.gen(function* () {
-    const code = `LINK-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const randomBytes = new Uint8Array(4);
+    crypto.getRandomValues(randomBytes);
+    const code = `LINK-${Array.from(randomBytes).map(b => b.toString(36).padStart(2, '0')).join('').toUpperCase().slice(0, 6)}`;
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
     yield* Effect.promise(() =>
@@ -142,11 +147,14 @@ const healthHandler = () =>
 // Main app
 const app = new Hono<{ Bindings: Env }>();
 
-// Middleware to extract API key
+// Middleware to extract and validate API key
 app.use("/v1/*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
   if (authHeader) {
-    c.set("apiKey", authHeader.replace("Bearer ", ""));
+    const match = authHeader.match(/^Bearer\s+(.+)$/);
+    if (match) {
+      c.set("apiKey", match[1]);
+    }
   }
   await next();
 });
@@ -158,11 +166,24 @@ app.get("/health", async (c) => {
 });
 
 app.post("/v1/register", async (c) => {
-  const { DB } = c.env;
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
   const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
 
   try {
+    // Rate limiting: max 5 registrations per IP per hour
+    const rateKey = `rate_limit:register:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+
+    if (count >= 5) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+
     const result = await Effect.runPromise(registerHandler(DB));
+
+    // Increment rate limit counter
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
 
     // If telegram_id provided, link immediately
     if (body.telegram_id) {
@@ -244,38 +265,55 @@ app.post("/v1/link-telegram/confirm", async (c) => {
   }
 
   try {
-    // Find the code
+    // Atomic update: mark code as used only if not already used and not expired
+    const updateResult = await DB.prepare(
+      `UPDATE telegram_link_codes
+       SET used_at = CURRENT_TIMESTAMP
+       WHERE code = ?
+         AND used_at IS NULL
+         AND expires_at > CURRENT_TIMESTAMP`,
+    )
+      .bind(body.code)
+      .run();
+
+    if (!updateResult.success || updateResult.meta.changes === 0) {
+      // Check why it failed
+      const codeResult = await DB.prepare(
+        `SELECT used_at, expires_at
+         FROM telegram_link_codes
+         WHERE code = ?`,
+      )
+        .bind(body.code)
+        .first();
+
+      if (!codeResult) {
+        return c.json({ error: "Invalid code" }, 400);
+      }
+
+      if (codeResult.used_at) {
+        return c.json({ error: "Code already used" }, 400);
+      }
+
+      if (new Date(codeResult.expires_at as string) < new Date()) {
+        return c.json({ error: "Code expired" }, 400);
+      }
+
+      return c.json({ error: "Linking failed" }, 500);
+    }
+
+    // Get user_id from the code
     const codeResult = await DB.prepare(
-      `SELECT user_id, expires_at, used_at
-       FROM telegram_link_codes
-       WHERE code = ?`,
+      `SELECT user_id FROM telegram_link_codes WHERE code = ?`,
     )
       .bind(body.code)
       .first();
 
-    if (!codeResult) {
-      return c.json({ error: "Invalid code" }, 400);
-    }
-
-    if (codeResult.used_at) {
-      return c.json({ error: "Code already used" }, 400);
-    }
-
-    if (new Date(codeResult.expires_at as string) < new Date()) {
-      return c.json({ error: "Code expired" }, 400);
-    }
-
     // Link telegram
     await DB.prepare("UPDATE users SET telegram_id = ? WHERE id = ?")
-      .bind(body.telegram_id, codeResult.user_id)
+      .bind(body.telegram_id, codeResult?.user_id)
       .run();
 
-    // Mark code as used
-    await DB.prepare("UPDATE telegram_link_codes SET used_at = CURRENT_TIMESTAMP WHERE code = ?")
-      .bind(body.code)
-      .run();
-
-    return c.json({ success: true, user_id: codeResult.user_id });
+    return c.json({ success: true, user_id: codeResult?.user_id });
   } catch {
     return c.json({ error: "Linking failed" }, 500);
   }
