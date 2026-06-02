@@ -41,7 +41,13 @@ export const walletCommand = new Command("wallet")
           console.error("Error: No wallet found. Run 'prism wallet generate' first.");
           process.exit(1);
         }
-        const walletData = JSON.parse(fs.readFileSync(WALLET_FILE, "utf-8"));
+        let walletData: { pubkey: string };
+        try {
+          walletData = JSON.parse(fs.readFileSync(WALLET_FILE, "utf-8"));
+        } catch (err) {
+          console.error("Error: Failed to parse wallet file. It may be corrupted.");
+          process.exit(1);
+        }
         console.log(walletData.pubkey);
       }),
   )
@@ -53,7 +59,12 @@ export const walletCommand = new Command("wallet")
         ensureWalletDir();
         let secretKey: number[];
         if (keypairStr) {
-          secretKey = JSON.parse(keypairStr);
+          try {
+            secretKey = JSON.parse(keypairStr);
+          } catch (err) {
+            console.error("Error: Invalid keypair JSON format");
+            process.exit(1);
+          }
         } else {
           console.error("Error: Keypair required");
           process.exit(1);
