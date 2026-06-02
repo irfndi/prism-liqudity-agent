@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { getCurrentVersion } from "../engine/version.js";
 
 export const updateCommand = new Command("update")
@@ -28,6 +28,13 @@ export const updateCommand = new Command("update")
       };
 
       const latest = release.tag_name;
+
+      // Validate version string to prevent command injection
+      const validVersion = /^v?[\d.]+$/.test(latest);
+      if (!validVersion) {
+        console.error("Error: Invalid version format from GitHub API");
+        process.exit(1);
+      }
 
       // Simple semver compare
       const parse = (v: string) => v.replace(/^v/, "").split(".").map(Number);
@@ -61,13 +68,21 @@ export const updateCommand = new Command("update")
           console.error("Error: Local modifications detected. Commit or stash before updating.");
           process.exit(1);
         }
-      } catch {
-        // git not available, skip check
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("git")) {
+          console.warn("Warning: git not available, skipping local modification check");
+        }
+        // Otherwise git is available but returned empty status, which is fine
       }
 
       console.log("Applying update...");
       execSync("git fetch origin", { stdio: "inherit" });
-      execSync(`git checkout ${latest}`, { stdio: "inherit" });
+      // Use spawnSync with array args to avoid shell interpolation
+      const checkoutResult = spawnSync("git", ["checkout", latest], { stdio: "inherit" });
+      if (checkoutResult.status !== 0) {
+        console.error("Error: git checkout failed");
+        process.exit(1);
+      }
       execSync("bun install", { stdio: "inherit" });
 
       console.log(`✓ Updated to ${latest}`);

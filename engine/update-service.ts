@@ -1,5 +1,5 @@
 import { Effect, Context } from "effect";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { getCurrentVersion } from "./version.js";
 import { ConfigService } from "./config-service.js";
 
@@ -30,6 +30,10 @@ function compareVersions(a: string, b: string): number {
     if (av < bv) return -1;
   }
   return 0;
+}
+
+function isValidVersion(version: string): boolean {
+  return /^v?[\d.]+$/.test(version);
 }
 
 export const UpdateServiceLive = Effect.gen(function* () {
@@ -63,6 +67,10 @@ export const UpdateServiceLive = Effect.gen(function* () {
       }
 
       const latest = response.tag_name;
+      if (!isValidVersion(latest)) {
+        return yield* Effect.fail(new Error("Invalid version format from GitHub API"));
+      }
+
       if (compareVersions(latest, current) <= 0) {
         return null;
       }
@@ -78,6 +86,10 @@ export const UpdateServiceLive = Effect.gen(function* () {
 
   const applyUpdate = (version: string): Effect.Effect<void, unknown> =>
     Effect.gen(function* () {
+      if (!isValidVersion(version)) {
+        return yield* Effect.fail(new Error("Invalid version format"));
+      }
+
       // Check for local modifications
       if (!config.updateAllowDirty) {
         const status = yield* Effect.try(() =>
@@ -90,10 +102,13 @@ export const UpdateServiceLive = Effect.gen(function* () {
         }
       }
 
-      // Fetch and pull
+      // Fetch and checkout using spawnSync to avoid shell interpolation
       yield* Effect.try(() => {
         execSync("git fetch origin", { stdio: "inherit" });
-        execSync(`git checkout ${version}`, { stdio: "inherit" });
+        const result = spawnSync("git", ["checkout", version], { stdio: "inherit" });
+        if (result.status !== 0) {
+          throw new Error(`git checkout ${version} failed`);
+        }
         execSync("bun install", { stdio: "inherit" });
       });
 

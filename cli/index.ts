@@ -12,13 +12,14 @@ import { devCommand } from "./dev.js";
 import { backtestCommand } from "./backtest.js";
 import { updateCommand } from "./update.js";
 import { versionCommand } from "./version.js";
+import { getCurrentVersion } from "../engine/version.js";
 
 const program = new Command();
 
 program
   .name("prism")
   .description("Prism — autonomous liquidity agent")
-  .version("1.0.0");
+  .version(getCurrentVersion());
 
 program.addCommand(setupCommand);
 program.addCommand(registerCommand);
