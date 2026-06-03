@@ -14,6 +14,7 @@ import {
   type ReleaseInfo,
 } from "./update-utils.js";
 import { createLogger } from "./logger.js";
+import { errorReporter } from "./error-reporter.js";
 
 const logger = createLogger("update-service");
 
@@ -142,6 +143,23 @@ export const UpdateServiceLive = Effect.gen(function* () {
           });
         });
 
+        // Pre-apply smoke tests
+        yield* Effect.try(() => {
+          execSync("bunx tsc --noEmit", { cwd: extractedDir, stdio: "inherit" });
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.fail(new Error(`TypeScript smoke test failed — refusing to install ${version}`)),
+          ),
+        );
+
+        yield* Effect.try(() => {
+          execSync("bunx vitest run --reporter=basic", { cwd: extractedDir, stdio: "inherit" });
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.fail(new Error(`Test suite smoke test failed — refusing to install ${version}`)),
+          ),
+        );
+
         // Atomic swap: stage new files alongside install root, then rename.
         // This avoids leaving the live install in a half-updated state on failure.
         const installRoot = process.cwd();
@@ -180,6 +198,31 @@ export const UpdateServiceLive = Effect.gen(function* () {
             if (existsSync(currentBackup)) {
               execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
             }
+
+            // Post-apply health check
+            console.log("Running post-apply health check...");
+            try {
+              execSync("bunx tsc --noEmit", { cwd: installRoot, stdio: "inherit", timeout: 5000 });
+            } catch (healthErr) {
+              console.error("Post-apply health check failed — rolling back");
+              try {
+                rmSync(installRoot, { recursive: true, force: true });
+                if (existsSync(backupRoot)) {
+                  execSync(`mv "${backupRoot}" "${installRoot}"`, { stdio: "inherit" });
+                }
+              } catch (rollbackErr) {
+                throw new Error(
+                  "Update failed: health check did not pass AND rollback failed. " +
+                    `Your install at ${installRoot} may be in an inconsistent state. ` +
+                    `Previous version is at ${backupRoot}.`,
+                );
+              }
+              throw new Error(
+                `Post-apply health check failed — rolled back to previous version. ` +
+                  `Error: ${(healthErr as Error).message}`,
+              );
+            }
+            console.log("✓ Post-apply health check passed");
           } catch (swapErr) {
             // Best-effort cleanup of any orphaned staging directory.
             if (existsSync(stagedRoot)) {
@@ -201,7 +244,14 @@ export const UpdateServiceLive = Effect.gen(function* () {
           rmSync(workDir, { recursive: true, force: true });
         }
       }
-    });
+    }).pipe(
+      Effect.tapError((err) =>
+        Effect.sync(() => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          errorReporter.report(error, { severity: "critical" });
+        }),
+      ),
+    );
 
   const service: UpdateService = {
     checkForUpdates,

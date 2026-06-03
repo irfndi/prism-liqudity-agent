@@ -11,6 +11,7 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GITHUB_TOKEN: string;
   GITHUB_REPO: string;
+  ADMIN_API_KEY?: string;
 }
 
 // Services
@@ -483,6 +484,212 @@ app.post("/v1/issue", async (c) => {
     return c.json({ issue_number: issue.number, url: issue.html_url });
   } catch {
     return c.json({ error: "Failed to create issue" }, 500);
+  }
+});
+
+// ── Error Reporting ──────────────────────────────────────────────────────────
+// Privacy-first error telemetry (opt-in, no auth required for ingestion)
+
+app.post("/v1/errors/report", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  const body = await c.req
+    .json<{
+      id?: string;
+      agentId?: string;
+      errorType?: string;
+      message?: string;
+      stackTrace?: string;
+      prismVersion?: string;
+      platform?: string;
+      severity?: string;
+      isRecoverable?: number;
+    }>()
+    .catch(() => ({}));
+
+  // Validate required fields
+  if (!body.id || !body.agentId || !body.errorType || !body.message || !body.prismVersion) {
+    return c.json(
+      { error: "Missing required fields: id, agentId, errorType, message, prismVersion" },
+      400,
+    );
+  }
+
+  // Rate limit: 100 reports per IP per hour
+  if (CACHE) {
+    const rateKey = `rate_limit:error_report:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+    if (count >= 100) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+  }
+
+  try {
+    const severity = body.severity ?? "error";
+    const isRecoverable = body.isRecoverable ? 1 : 0;
+
+    await DB.prepare(
+      `INSERT INTO error_logs (id, agent_id, error_type, message, stack_trace, prism_version, platform, severity, is_recoverable)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        body.id,
+        body.agentId,
+        body.errorType,
+        body.message,
+        body.stackTrace ?? null,
+        body.prismVersion,
+        body.platform ?? null,
+        severity,
+        isRecoverable,
+      )
+      .run();
+
+    return c.json({ id: body.id });
+  } catch (err) {
+    // Duplicate id is expected (agent retries) — return 200 for idempotency
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("UNIQUE constraint")) {
+      return c.json({ id: body.id });
+    }
+    return c.json({ error: "Failed to store error report" }, 500);
+  }
+});
+
+app.post("/v1/errors/batch", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  const body = await c.req
+    .json<{
+      reports?: Array<{
+        id?: string;
+        agentId?: string;
+        errorType?: string;
+        message?: string;
+        stackTrace?: string;
+        prismVersion?: string;
+        platform?: string;
+        severity?: string;
+        isRecoverable?: number;
+      }>;
+    }>()
+    .catch(() => ({}));
+
+  const reports = body.reports ?? [];
+
+  if (reports.length === 0) {
+    return c.json({ error: "No reports provided" }, 400);
+  }
+
+  if (reports.length > 50) {
+    return c.json({ error: "Batch size exceeds maximum of 50" }, 400);
+  }
+
+  // Rate limit: 50 batches per IP per hour
+  if (CACHE) {
+    const rateKey = `rate_limit:error_batch:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+    if (count >= 50) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+  }
+
+  // Validate all reports
+  const validReports: Array<{
+    id: string;
+    agentId: string;
+    errorType: string;
+    message: string;
+    prismVersion: string;
+    stackTrace: string | null;
+    platform: string | null;
+    severity: string;
+    isRecoverable: number;
+  }> = [];
+
+  for (const r of reports) {
+    if (!r.id || !r.agentId || !r.errorType || !r.message || !r.prismVersion) {
+      return c.json(
+        {
+          error: "Each report requires id, agentId, errorType, message, prismVersion",
+          reportId: r.id ?? "(missing id)",
+        },
+        400,
+      );
+    }
+    validReports.push({
+      id: r.id,
+      agentId: r.agentId,
+      errorType: r.errorType,
+      message: r.message,
+      prismVersion: r.prismVersion,
+      stackTrace: r.stackTrace ?? null,
+      platform: r.platform ?? null,
+      severity: r.severity ?? "error",
+      isRecoverable: r.isRecoverable ? 1 : 0,
+    });
+  }
+
+  try {
+    const stmt = DB.prepare(
+      `INSERT OR IGNORE INTO error_logs (id, agent_id, error_type, message, stack_trace, prism_version, platform, severity, is_recoverable)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    const batchStatements = validReports.map((r) =>
+      stmt.bind(
+        r.id,
+        r.agentId,
+        r.errorType,
+        r.message,
+        r.stackTrace,
+        r.prismVersion,
+        r.platform,
+        r.severity,
+        r.isRecoverable,
+      ),
+    );
+
+    await DB.batch(batchStatements);
+
+    return c.json({ inserted: validReports.length });
+  } catch {
+    return c.json({ error: "Failed to store error reports" }, 500);
+  }
+});
+
+app.get("/v1/errors/stats", async (c) => {
+  const { DB } = c.env;
+
+  // Require admin bearer token
+  const authHeader = c.req.header("Authorization");
+  const match = authHeader?.match(/^Bearer\s+(.+)$/);
+  const token = match?.[1];
+
+  if (!token || token !== c.env.ADMIN_API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const result = await DB.prepare(
+      `SELECT error_type, COUNT(*) as count
+       FROM error_logs
+       WHERE created_at >= datetime('now', '-1 day')
+       GROUP BY error_type
+       ORDER BY count DESC`,
+    ).all();
+
+    const rows = result.results ?? [];
+
+    return c.json({ stats: rows });
+  } catch {
+    return c.json({ error: "Failed to fetch stats" }, 500);
   }
 });
 
