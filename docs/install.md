@@ -4,19 +4,42 @@
 
 ## Prerequisites
 
-- **Bun 1.2+** — [Install Bun](https://bun.sh/docs/installation)
+- **Bun 1.3.14+** — [Install Bun](https://bun.sh/docs/installation) (the one-liner installer can do this for you)
 - **Git** — for cloning the repository
 - **Solana wallet** (optional) — only needed for live trading; paper trading works without one
 - **Helius API key** (REQUIRED) — [Get one free at Helius](https://helius.xyz/)
 
-## Quick Start
+## One-liner Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | bash
+```
+
+What the installer does:
+
+1. Installs Bun if it's not already on `PATH`
+2. Clones (or updates) the repo to `~/.prism`
+3. Runs `bun install` (no `--frozen-lockfile` so older Bun versions work)
+4. Writes a default `.env` (idempotent — leaves existing `.env` untouched)
+5. Writes a wrapper script at `~/.local/bin/prism` that runs the CLI from the install directory
+
+Then:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"   # if not already on PATH
+prism register                          # get an API key from the deployed Cloudflare API
+prism setup --non-interactive --helius-key=your-helius-key
+prism dev                               # start paper trading
+```
+
+## Quick Start (Manual)
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/irfndi/prism-liquidity-agent.git
 cd prism-liquidity-agent
 
-# 2. Install dependencies
+# 2. Install dependencies (postinstall writes a default .env if missing)
 bun install
 
 # 3. Register with Prism (get your API key from deployed Cloudflare API)
@@ -36,8 +59,11 @@ prism dev
 ```bash
 git clone https://github.com/irfndi/prism-liquidity-agent.git
 cd prism-liquidity-agent
-bun install
+bun install  # postinstall writes a default .env next to package.json
 ```
+
+If the postinstall hook is disabled (`bun install --ignore-scripts`), run
+`bun run setup:env` manually to write the default `.env`.
 
 ### 2. Register (Get API Key)
 
@@ -55,13 +81,14 @@ prism setup
 
 Interactive wizard that asks for:
 
-| Prompt | Required | Default |
-|--------|----------|---------|
-| Helius API key | **YES** | — |
-| Wallet private key | NO | empty (paper trading) |
-| Watchlist pools | NO | empty (use pool discovery) |
+| Prompt             | Required | Default                    |
+| ------------------ | -------- | -------------------------- |
+| Helius API key     | **YES**  | —                          |
+| Wallet private key | NO       | empty (paper trading)      |
+| Watchlist pools    | NO       | empty (use pool discovery) |
 
 Everything else is **preconfigured** with sensible defaults:
+
 - `PAPER_TRADING=true`
 - `SOLANA_RPC_URL` auto-derived from your Helius key
 - All strategy params (min TVL, fee/IL ratio, etc.) from `config-service.ts`
@@ -84,7 +111,7 @@ PAPER_TRADING=false prism dev
 
 ## What's Preconfigured
 
-You don't need to set these — they have sensible defaults:
+You don't need to set these — they have sensible defaults (auto-written by the postinstall hook if missing):
 
 - `PAPER_TRADING=true` — start with simulated trades
 - `SCAN_INTERVAL_MS=600000` — scan every 10 minutes
@@ -93,7 +120,21 @@ You don't need to set these — they have sensible defaults:
 - `VOLUME_AUTH_THRESHOLD=0.70` — skip wash-traded pools
 - `CONFIDENCE_THRESHOLD=0.65` — minimum confidence to act
 - `TRAILING_STOP_PCT=0.10` — 10% drawdown triggers exit
+- `SQLITE_DB_PATH=./prism.db` — agent's local DB
+- `EMBEDDINGS_BACKEND=fallback` — pure-JS embeddings (no ONNX download)
 - All other strategy parameters
+
+### About `EMBEDDINGS_BACKEND`
+
+Default is `fallback` — a deterministic 384-dim hash-based embedding that
+ships zero additional dependencies. Memory similarity clusters identical
+inputs (so the agent can still recall what it just wrote) but is **not
+semantically meaningful** (so cross-input recall is degraded).
+
+To opt into the real model (downloads ~80MB ONNX weights on first use),
+set `EMBEDDINGS_BACKEND=onnx` in your `.env`. Note: the ONNX runtime
+can crash in Node.js with `BigInt` serialization errors; if that
+happens the agent falls back to hash embeddings and logs a warning.
 
 ## What's Dead/Unused (Ignore These)
 

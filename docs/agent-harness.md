@@ -4,26 +4,22 @@ Prism is designed to be operated by AI agent harnesses (OpenClaw, Hermes, acpx, 
 
 ## Supported Agent Platforms
 
-| Platform | Status | Integration |
-|----------|--------|-------------|
-| OpenClaw | ✅ Supported | Native CLI commands |
-| Hermes | ✅ Supported | Native CLI commands |
-| acpx | ✅ Supported | CLI wrapper |
-| Custom agents | ✅ Supported | HTTP API + CLI |
+| Platform      | Status       | Integration         |
+| ------------- | ------------ | ------------------- |
+| OpenClaw      | ✅ Supported | Native CLI commands |
+| Hermes        | ✅ Supported | Native CLI commands |
+| acpx          | ✅ Supported | CLI wrapper         |
+| Custom agents | ✅ Supported | HTTP API + CLI      |
 
 ## Live Infrastructure (Already Deployed)
 
 Agents do **not** need to deploy Cloudflare workers. They are already running:
 
-| Resource | URL / ID |
-|----------|----------|
-| API Worker | `https://prism-api.irfndi.workers.dev` |
+| Resource     | URL / ID                                        |
+| ------------ | ----------------------------------------------- |
+| API Worker   | `https://prism-api.irfndi.workers.dev`          |
 | Telegram Bot | `https://prism-telegram-bot.irfndi.workers.dev` |
-| Bot username | `@prism_agent_bot` |
-| D1 database | `prism-db` (`0657c2b3-fdea-4b33-b11b-8d0a7b27cbc8`) |
-| KV namespace | `prism-cache` |
-| R2 bucket | `prism-backups` |
-| Vectorize | `prism-memory` |
+| Bot username | `@prism_agent_bot`                              |
 
 ## Quick Start for Agents (4 steps)
 
@@ -138,11 +134,11 @@ The `prism register` command returns an API key that's stored locally in `~/.con
 
 Prism works with the following OpenCode skills (for OpenCode-based agents):
 
-| Skill | Relevance | Use Case |
-|-------|-----------|----------|
-| `git-master` | 🔴 High | Git operations on the repo |
-| `web-perf` | 🟢 Low | Performance analysis (rarely needed) |
-| `security-research` | 🟢 Low | Security audits (rarely needed) |
+| Skill               | Relevance | Use Case                             |
+| ------------------- | --------- | ------------------------------------ |
+| `git-master`        | 🔴 High   | Git operations on the repo           |
+| `web-perf`          | 🟢 Low    | Performance analysis (rarely needed) |
+| `security-research` | 🟢 Low    | Security audits (rarely needed)      |
 
 Most Prism operations don't need special skills — the CLI is self-contained.
 
@@ -156,22 +152,22 @@ commands:
   prism-register:
     cmd: prism register
     description: Register with Prism and get an API key
-   
+
   prism-setup:
     cmd: prism setup --non-interactive --helius-key={{helius_key}}
     description: Configure Prism with Helius API key
     args:
       helius_key:
         required: true
-   
+
   prism-dev:
     cmd: prism dev
     description: Start paper trading agent
-   
+
   prism-whoami:
     cmd: prism whoami
     description: Get current user account info
-   
+
   prism-update:
     cmd: prism update
     description: Check for and apply updates
@@ -211,13 +207,13 @@ prism update
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| "Helius key invalid" | Wrong API key | Re-run `prism setup` with correct key |
-| "No wallet configured" | Missing private key | Add `WALLET_PRIVATE_KEY` to `.env` or use paper trading |
-| "API key expired" | Session expired | Re-run `prism register` |
-| "Pool not found" | Invalid watchlist | Check pool addresses with `prism setup` |
-| "401 Unauthorized" on Telegram link | User not registered | User runs `prism register` first |
+| Symptom                             | Cause               | Fix                                                     |
+| ----------------------------------- | ------------------- | ------------------------------------------------------- |
+| "Helius key invalid"                | Wrong API key       | Re-run `prism setup` with correct key                   |
+| "No wallet configured"              | Missing private key | Add `WALLET_PRIVATE_KEY` to `.env` or use paper trading |
+| "API key expired"                   | Session expired     | Re-run `prism register`                                 |
+| "Pool not found"                    | Invalid watchlist   | Check pool addresses with `prism setup`                 |
+| "401 Unauthorized" on Telegram link | User not registered | User runs `prism register` first                        |
 
 ## Reference
 
