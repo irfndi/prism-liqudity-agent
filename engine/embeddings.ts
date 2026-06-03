@@ -1,5 +1,3 @@
-import { createHash } from "crypto";
-
 // Fallback is default: @xenova/transformers crashes in Node when
 // serializing BigInt. Set EMBEDDINGS_BACKEND=onnx to opt back into ONNX.
 const VECTOR_DIM = 384;
@@ -28,14 +26,18 @@ async function loadOnnx(): Promise<(text: string) => Promise<number[]>> {
 
 function fallbackEmbedding(text: string): number[] {
   const vec = Array.from<number>({ length: VECTOR_DIM }).fill(0);
-  // Hash consecutive 8-byte windows of the UTF-8 encoding into vector slots.
-  // This is not a real semantic embedding but is deterministic and stable
-  // for the same input, which is enough to keep the agent from crashing.
+  // FNV-1a over 8-byte windows: no per-window allocation, runs on the
+  // hot path. Not semantically meaningful — just stable and fast.
   const bytes = Buffer.from(text, "utf-8");
   const window = 8;
-  for (let i = 0; i <= bytes.length; i++) {
-    const slice = bytes.subarray(i, Math.min(i + window, bytes.length));
-    const slot = createHash("sha1").update(slice).digest().readUInt32BE(0) % VECTOR_DIM;
+  for (let i = 0; i < bytes.length; i++) {
+    const end = Math.min(i + window, bytes.length);
+    let hash = 0x811c9dc5;
+    for (let j = i; j < end; j++) {
+      hash ^= bytes[j] ?? 0;
+      hash = Math.imul(hash, 0x01000193);
+    }
+    const slot = (hash >>> 0) % VECTOR_DIM;
     vec[slot] = (vec[slot] ?? 0) + 1;
   }
   // L2-normalize so callers that expect a unit vector keep working.
@@ -47,7 +49,7 @@ function fallbackEmbedding(text: string): number[] {
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
-  if (process.env.EMBEDDINGS_BACKEND === "fallback") {
+  if (process.env.EMBEDDINGS_BACKEND !== "onnx") {
     return fallbackEmbedding(text);
   }
   try {
@@ -56,7 +58,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
   } catch (err) {
     console.warn(
       "ONNX embedding model unavailable; falling back to deterministic hash vectors. " +
-        "Memory similarity will be reduced. Set EMBEDDINGS_BACKEND=fallback to silence this.",
+        "Memory similarity will be reduced.",
       err instanceof Error ? err.message : String(err),
     );
     return fallbackEmbedding(text);

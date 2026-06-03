@@ -11,10 +11,12 @@ echo "→ Installing prism to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 
 # Detect or install Bun
+BUN_INSTALLED=0
 if ! command -v bun >/dev/null 2>&1; then
   echo "→ Bun not found; installing to $HOME/.bun"
   curl -fsSL https://bun.sh/install | bash
   export PATH="$HOME/.bun/bin:$PATH"
+  BUN_INSTALLED=1
 fi
 
 # Clone or update the source
@@ -35,6 +37,8 @@ echo "→ Running postinstall setup"
 
 # Symlink the prism command
 if [ -w "$BIN_DIR" ]; then
+  # git does not always preserve the executable bit
+  chmod +x "$INSTALL_DIR/cli/index.ts"
   ln -sf "$INSTALL_DIR/cli/index.ts" "$BIN_DIR/prism"
   echo "→ Linked $BIN_DIR/prism → $INSTALL_DIR/cli/index.ts"
 else
@@ -47,7 +51,11 @@ echo "  - Source: $INSTALL_DIR"
 echo "  - Run:    $BIN_DIR/prism --version"
 echo ""
 echo "Next steps:"
-echo "  1. Add to PATH if needed:  export PATH=\"$BIN_DIR:\$PATH\""
-echo "  2. Register an account:    prism register"
-echo "  3. Configure:              prism setup"
-echo "  4. Start trading:          prism dev"
+if [ "$BUN_INSTALLED" -eq 1 ]; then
+  echo "  1. Add to PATH (new shell):  export PATH=\"\$HOME/.bun/bin:$BIN_DIR:\$PATH\""
+else
+  echo "  1. Add to PATH if needed:    export PATH=\"$BIN_DIR:\$PATH\""
+fi
+echo "  2. Register an account:      prism register"
+echo "  3. Configure:                prism setup --non-interactive --helius-key=your-helius-key"
+echo "  4. Start trading:            prism dev"

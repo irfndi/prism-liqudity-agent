@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { bigintReplacer, stringifySafe } from "../engine/bigint-json.js";
+import {
+  bigintReplacer,
+  bigintReviver,
+  stringifySafe,
+  parseBigIntSafe,
+} from "../engine/bigint-json.js";
 import { getEmbedding, EMBEDDING_DIM } from "../engine/embeddings.js";
 
 describe("bigintReplacer", () => {
@@ -28,43 +33,88 @@ describe("bigintReplacer", () => {
   });
 });
 
+describe("bigintReviver (parse round-trip)", () => {
+  it("converts decimal strings back to bigint for known fields", () => {
+    const json = stringifySafe({
+      reserveX: 123n,
+      reserveY: 456n,
+      liquiditySupply: 789n,
+      name: "x",
+    });
+    const parsed = parseBigIntSafe<{
+      reserveX: bigint;
+      reserveY: bigint;
+      liquiditySupply: bigint;
+      name: string;
+    }>(json);
+    expect(parsed.reserveX).toBe(123n);
+    expect(parsed.reserveY).toBe(456n);
+    expect(parsed.liquiditySupply).toBe(789n);
+    expect(parsed.name).toBe("x");
+    expect(typeof parsed.reserveX).toBe("bigint");
+  });
+
+  it("preserves non-bigint fields unchanged", () => {
+    const json = stringifySafe({ price: 1.5, count: 42, label: "abc" });
+    const parsed = parseBigIntSafe<{ price: number; count: number; label: string }>(json);
+    expect(parsed.price).toBe(1.5);
+    expect(parsed.count).toBe(42);
+    expect(parsed.label).toBe("abc");
+  });
+
+  it("does not convert unrelated string fields", () => {
+    const json = JSON.stringify({ description: "123" });
+    const parsed = parseBigIntSafe<{ description: string }>(json);
+    expect(parsed.description).toBe("123");
+  });
+
+  it("bigintReviver returns value unchanged for non-bigint fields", () => {
+    expect(bigintReviver("name", "foo")).toBe("foo");
+    expect(bigintReviver("name", 42)).toBe(42);
+  });
+});
+
 describe("getEmbedding fallback", () => {
-  it("returns a 384-dim unit vector when EMBEDDINGS_BACKEND=fallback", async () => {
+  // Clear EMBEDDINGS_BACKEND so we assert the default, not the explicit flag.
+  const clearEnv = () => delete process.env.EMBEDDINGS_BACKEND;
+  const restoreEnv = (prev: string | undefined) => {
+    if (prev === undefined) clearEnv();
+    else process.env.EMBEDDINGS_BACKEND = prev;
+  };
+
+  it("returns a 384-dim unit vector by default (no env var set)", async () => {
     const prev = process.env.EMBEDDINGS_BACKEND;
-    process.env.EMBEDDINGS_BACKEND = "fallback";
+    clearEnv();
     try {
       const vec = await getEmbedding("hello world");
       expect(vec).toHaveLength(EMBEDDING_DIM);
       const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0));
       expect(norm).toBeCloseTo(1, 5);
     } finally {
-      if (prev === undefined) delete process.env.EMBEDDINGS_BACKEND;
-      else process.env.EMBEDDINGS_BACKEND = prev;
+      restoreEnv(prev);
     }
   });
 
   it("is deterministic for the same input", async () => {
     const prev = process.env.EMBEDDINGS_BACKEND;
-    process.env.EMBEDDINGS_BACKEND = "fallback";
+    clearEnv();
     try {
       const a = await getEmbedding("solana pool rebalance");
       const b = await getEmbedding("solana pool rebalance");
       expect(a).toEqual(b);
     } finally {
-      if (prev === undefined) delete process.env.EMBEDDINGS_BACKEND;
-      else process.env.EMBEDDINGS_BACKEND = prev;
+      restoreEnv(prev);
     }
   });
 
   it("is non-zero (sanity)", async () => {
     const prev = process.env.EMBEDDINGS_BACKEND;
-    process.env.EMBEDDINGS_BACKEND = "fallback";
+    clearEnv();
     try {
       const vec = await getEmbedding("solana");
       expect(vec.some((v) => v !== 0)).toBe(true);
     } finally {
-      if (prev === undefined) delete process.env.EMBEDDINGS_BACKEND;
-      else process.env.EMBEDDINGS_BACKEND = prev;
+      restoreEnv(prev);
     }
   });
 });

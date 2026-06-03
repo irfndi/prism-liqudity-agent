@@ -28,7 +28,7 @@ Then:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"   # if not already on PATH
 prism register                          # get an API key from the deployed Cloudflare API
-prism setup --non-interactive --helius-key=$KEY
+prism setup --non-interactive --helius-key=your-helius-key
 prism dev                               # start paper trading
 ```
 
