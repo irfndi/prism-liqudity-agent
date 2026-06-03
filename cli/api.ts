@@ -41,8 +41,8 @@ export async function prismApiPost<T = unknown>(
         error: `Prism API error: ${response.status} ${response.statusText}`,
       };
     }
-    const json = (await response.json()) as { result?: T; error?: string };
-    return { ok: true, status: response.status, data: json.result };
+    const json = (await response.json()) as T;
+    return { ok: true, status: response.status, data: json };
   } catch (err) {
     return {
       ok: false,

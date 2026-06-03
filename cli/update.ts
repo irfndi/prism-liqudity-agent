@@ -92,22 +92,25 @@ export const updateCommand = new Command("update")
       await pipeline(downloadResponse.body, createWriteStream(tarballPath));
       console.log(`✓ Downloaded to ${tarballPath}`);
 
-      if (release.sha256Url) {
-        console.log("Verifying SHA-256 checksum...");
-        const expectedHashResponse = await fetch(release.sha256Url);
-        if (!expectedHashResponse.ok) {
-          throw new UpdateAbort(
-            `Failed to fetch SHA-256 checksum: ${expectedHashResponse.status} ${expectedHashResponse.statusText}`,
-          );
-        }
-        const expectedHash = (await expectedHashResponse.text()).trim().split(/\s+/)[0] ?? "";
-        const fileBuffer = readFileSync(tarballPath);
-        const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
-        if (actualHash !== expectedHash) {
-          throw new UpdateAbort(`SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`);
-        }
-        console.log("✓ SHA-256 checksum verified");
+      if (!release.sha256Url) {
+        throw new UpdateAbort(
+          `Release manifest missing sha256Url — refusing to install ${latest} without integrity check`,
+        );
       }
+      console.log("Verifying SHA-256 checksum...");
+      const expectedHashResponse = await fetch(release.sha256Url);
+      if (!expectedHashResponse.ok) {
+        throw new UpdateAbort(
+          `Failed to fetch SHA-256 checksum: ${expectedHashResponse.status} ${expectedHashResponse.statusText}`,
+        );
+      }
+      const expectedHash = (await expectedHashResponse.text()).trim().split(/\s+/)[0] ?? "";
+      const fileBuffer = readFileSync(tarballPath);
+      const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
+      if (actualHash !== expectedHash) {
+        throw new UpdateAbort(`SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`);
+      }
+      console.log("✓ SHA-256 checksum verified");
 
       console.log("Extracting tarball...");
       execSync(`tar -xzf "${tarballPath}" -C "${workDir}"`, { stdio: "inherit" });
@@ -126,12 +129,46 @@ export const updateCommand = new Command("update")
       console.log("Installing dependencies...");
       execSync("bun install", { cwd: extractedDir, stdio: "inherit" });
 
-      // Use absolute destDir: relative `../..` from extractedDir lands in /tmp.
-      const destDir = process.cwd();
-      console.log(`Copying files to ${destDir}...`);
-      execSync(`cp -R "${extractedDir}/." "${destDir}/"`, {
-        stdio: "inherit",
-      });
+      // Atomic swap: stage new files alongside the install root, then rename.
+      // A direct copy into the live install can leave it half-updated on failure.
+      const installRoot = process.cwd();
+      const installName = installRoot.split("/").pop() ?? "prism-liquidity-agent";
+      const stagedRoot = join(installRoot, "..", `.prism-update-stage`);
+      const backupRoot = join(installRoot, "..", `.prism-update-backup`);
+      const currentBackup = join(installRoot, "..", `.prism-prev-${installName}`);
+
+      try {
+        if (existsSync(stagedRoot)) {
+          rmSync(stagedRoot, { recursive: true, force: true });
+        }
+        execSync(`cp -R "${extractedDir}/." "${stagedRoot}/"`, { stdio: "inherit" });
+
+        if (existsSync(backupRoot)) {
+          rmSync(backupRoot, { recursive: true, force: true });
+        }
+
+        execSync(`mv "${installRoot}" "${currentBackup}"`, { stdio: "inherit" });
+        try {
+          execSync(`mv "${stagedRoot}" "${installRoot}"`, { stdio: "inherit" });
+        } catch (swapErr) {
+          if (existsSync(currentBackup) && !existsSync(installRoot)) {
+            execSync(`mv "${currentBackup}" "${installRoot}"`);
+          }
+          throw swapErr;
+        }
+        if (existsSync(currentBackup)) {
+          execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
+        }
+      } catch (swapErr) {
+        if (existsSync(stagedRoot)) {
+          try {
+            rmSync(stagedRoot, { recursive: true, force: true });
+          } catch {
+            // ignore cleanup failure
+          }
+        }
+        throw swapErr;
+      }
 
       logger.info(`Updated to ${latest} from ${release.source}`);
       console.log(`✓ Updated to ${latest}`);

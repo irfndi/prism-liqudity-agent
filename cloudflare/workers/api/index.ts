@@ -389,21 +389,36 @@ app.post("/v1/whoami-telegram", async (c) => {
   if (!result) {
     return c.json({ error: "User not found" }, 404);
   }
-  return c.json(result);
+  return c.json({
+    user_id: result.id,
+    tier: result.tier,
+    telegram_id: result.telegram_id,
+    created_at: result.created_at,
+  });
 });
 
 app.post("/v1/register-telegram", async (c) => {
-  const { DB } = c.env;
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
   const body = await c.req.json<{ telegram_id?: string; first_name?: string }>().catch(() => ({}));
 
   if (!body.telegram_id) {
     return c.json({ error: "telegram_id required" }, 400);
   }
 
+  // Same 5/hour/IP rate limit as /v1/register.
+  const rateKey = `rate_limit:register_telegram:${clientIp}`;
+  const rateData = await CACHE.get(rateKey);
+  const count = rateData ? parseInt(rateData, 10) : 0;
+  if (count >= 5) {
+    return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+  }
+
   try {
     const result = await Effect.runPromise(
       registerTelegramHandler(DB, body.telegram_id, body.first_name ?? ""),
     );
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
     return c.json({
       user_id: result.user_id,
       api_key: result.api_key,
