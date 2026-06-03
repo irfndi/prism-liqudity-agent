@@ -40,7 +40,12 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           TARBALL_NAME="prism-v${VERSION}.tar.gz"
           echo "Building ${TARBALL_NAME}"
+          # Exclude the archive being written and the .sha256/.asc sidecars
+          # to avoid tar's "file changed as we read it" error.
           tar -czf "${TARBALL_NAME}" \
+            --exclude="${TARBALL_NAME}" \
+            --exclude="${TARBALL_NAME}.sha256" \
+            --exclude="${TARBALL_NAME}.asc" \
             --exclude=node_modules \
             --exclude=dist \
             --exclude=.git \
