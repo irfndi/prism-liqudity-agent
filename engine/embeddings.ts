@@ -1,5 +1,8 @@
 // Fallback is default: @xenova/transformers crashes in Node when
 // serializing BigInt. Set EMBEDDINGS_BACKEND=onnx to opt back into ONNX.
+import { createLogger } from "./logger.js";
+
+const logger = createLogger("embeddings");
 const VECTOR_DIM = 384;
 
 let onnxPromise: Promise<(text: string) => Promise<number[]>> | null = null;
@@ -56,10 +59,9 @@ export async function getEmbedding(text: string): Promise<number[]> {
     const embed = await loadOnnx();
     return await embed(text);
   } catch (err) {
-    console.warn(
-      "ONNX embedding model unavailable; falling back to deterministic hash vectors. " +
-        "Memory similarity will be reduced.",
-      err instanceof Error ? err.message : String(err),
+    logger.warn(
+      "ONNX embedding model unavailable; falling back to deterministic hash vectors. Memory similarity will be reduced.",
+      { error: err instanceof Error ? err.message : String(err) },
     );
     return fallbackEmbedding(text);
   }

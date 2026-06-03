@@ -19,7 +19,7 @@ What the installer does:
 
 1. Installs Bun if it's not already on `PATH`
 2. Clones (or updates) the repo to `~/.prism`
-3. Runs `bun install --frozen-lockfile`
+3. Runs `bun install` (no `--frozen-lockfile` so older Bun versions work)
 4. Writes a default `.env` (idempotent — leaves existing `.env` untouched)
 5. Symlinks `~/.local/bin/prism` → the CLI
 

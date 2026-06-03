@@ -22,15 +22,26 @@ fi
 # Clone or update the source
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "→ Updating existing install"
+  # Resolve the default branch once; the symbolic ref can shift between
+  # invocations and we want a single consistent value.
+  DEFAULT_BRANCH=$(git -C "$INSTALL_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)
   # Local modifications abort a plain --ff-only. Try a non-destructive path
   # first, then fall back to a hard reset against origin/<default-branch>.
-  if ! (cd "$INSTALL_DIR" && git pull --ff-only 2>/dev/null); then
+  if (cd "$INSTALL_DIR" && git pull --ff-only 2>/dev/null); then
+    :
+  else
     echo "⚠ Local changes blocked fast-forward; stashing and retrying"
     if (cd "$INSTALL_DIR" && git stash && git pull --ff-only && git stash pop); then
       :
     else
-      echo "→ Stash failed; resetting to origin/$(git -C "$INSTALL_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)"
-      (cd "$INSTALL_DIR" && git fetch origin && git reset --hard "origin/$(git -C "$INSTALL_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")
+      # Count stash entries before the reset so we can warn if any were
+      # orphaned by a partial stash/pull/pop chain.
+      STASH_COUNT=$(cd "$INSTALL_DIR" && git stash list 2>/dev/null | wc -l | tr -d ' ')
+      echo "→ Update failed; resetting to origin/${DEFAULT_BRANCH}"
+      (cd "$INSTALL_DIR" && git fetch origin && git reset --hard "origin/${DEFAULT_BRANCH}")
+      if [ "${STASH_COUNT:-0}" -gt 0 ]; then
+        echo "→ ${STASH_COUNT} stash entry/entries preserved (use 'git stash list' to inspect)"
+      fi
     fi
   fi
 elif [ -d "$INSTALL_DIR" ]; then

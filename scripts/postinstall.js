@@ -29,6 +29,13 @@ SQLITE_DB_PATH=./prism.db
 # Embedding backend: "fallback" (pure-JS, no ONNX download) or "onnx"
 EMBEDDINGS_BACKEND=fallback
 
+# Pool discovery: when WATCHLIST_POOLS is empty, this enables the
+# screener-service to find pools automatically. Default on so a fresh
+# install scans real pools without manual configuration.
+ENABLE_POOL_DISCOVERY=true
+DISCOVERY_MIN_TVL_USD=100000
+DISCOVERY_MIN_FEE_RATIO=1.5
+
 # Runtime: "stable" | "beta" | "dev"
 UPDATE_CHANNEL=stable
 `;
