@@ -548,7 +548,7 @@ function rowToFeedback(row: Record<string, unknown>): {
     category: String(row.category),
     severity: String(row.severity),
     summary: String(row.summary),
-    details: row.details ? String(row.details) : null,
+    details: row.details != null ? String(row.details) : null,
     relatedFiles,
     contextJson: String(row.context_json ?? "{}"),
     githubIssueNumber: row.github_issue_number != null ? Number(row.github_issue_number) : null,

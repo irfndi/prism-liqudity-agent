@@ -415,3 +415,44 @@ describe("feedback service — getByHash", () => {
     expect(result!.summary).toBe(knownSummary);
   });
 });
+
+describe("feedback service — details round-trip", () => {
+  it("preserves empty-string details as '' (not null) on read-back", async () => {
+    const layer = buildLayer("");
+    const program = Effect.gen(function* () {
+      const fb = yield* FeedbackService;
+      const result = yield* fb.submit(
+        makeFeedback({ summary: "Empty details round-trip unique-marker-aaa", details: "" }),
+      );
+      const all = yield* fb.list();
+      const entry = all.find((e) => e.summary === "Empty details round-trip unique-marker-aaa");
+      return { result, entry };
+    }).pipe(Effect.provide(layer));
+
+    const { result, entry } = await Effect.runPromise(program);
+    expect(result.kind).toBe("local_only");
+    expect(entry).toBeDefined();
+    expect(entry!.details).toBe("");
+  });
+
+  it("preserves null details as null when details is omitted", async () => {
+    const layer = buildLayer("");
+    const program = Effect.gen(function* () {
+      const fb = yield* FeedbackService;
+      const result = yield* fb.submit({
+        category: "friction",
+        severity: "medium",
+        summary: "Null details round-trip unique-marker-bbb",
+        context: ctx(),
+      });
+      const all = yield* fb.list();
+      const entry = all.find((e) => e.summary === "Null details round-trip unique-marker-bbb");
+      return { result, entry };
+    }).pipe(Effect.provide(layer));
+
+    const { result, entry } = await Effect.runPromise(program);
+    expect(result.kind).toBe("local_only");
+    expect(entry).toBeDefined();
+    expect(entry!.details).toBeNull();
+  });
+});
