@@ -5,9 +5,10 @@ on:
     tags:
       - "v*.*.*"
 
-# Set job-level env for cross-step access (e.g., secrets in step if conditions)
+# Security: keep the secret out of job-level env so it is only exposed
+# to steps that need it. The boolean flag gates the `if:` checks below.
 env:
-  GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+  HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
 
 jobs:
   release:
@@ -67,9 +68,9 @@ jobs:
           cat "${TARBALL_NAME}.sha256"
 
       - name: Sign tarball (GPG, optional)
-        if: env.GPG_PRIVATE_KEY != ''
+        if: env.HAS_GPG_KEY == 'true'
         env:
-          GPG_PRIVATE_KEY: ${{ env.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           TARBALL_NAME="prism-v${VERSION}.tar.gz"
@@ -93,7 +94,7 @@ jobs:
           npx wrangler r2 object put "prism-backups/releases/v${VERSION}/prism-v${VERSION}.tar.gz.sha256" --file "prism-v${VERSION}.tar.gz.sha256"
 
       - name: Upload GPG signature to R2
-        if: env.GPG_PRIVATE_KEY != ''
+        if: env.HAS_GPG_KEY == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -102,7 +103,7 @@ jobs:
           npx wrangler r2 object put "prism-backups/releases/v${VERSION}/prism-v${VERSION}.tar.gz.asc" --file "prism-v${VERSION}.tar.gz.asc"
 
       - name: Update latest.json manifest (stable channel only)
-        if: "!contains(github.ref, '-beta')"
+        if: "!contains(github.ref, '-beta') && !contains(github.ref, '-dev')"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -142,7 +143,30 @@ jobs:
             "min_cli_version": "1.0.0"
           }
           EOF
-          npx wrangler r2 object put "prism-backups/releases/beta.json" --file beta.json
+          # Path must match R2_MANIFEST_PATHS.beta in engine/update-utils.ts
+          npx wrangler r2 object put "prism-backups/releases/channel/beta.json" --file beta.json
+
+      - name: Update dev channel manifest
+        if: contains(github.ref, '-dev')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_URL="https://r2.prism-agent.com/releases/v${VERSION}/prism-v${VERSION}.tar.gz"
+          cat > dev.json << EOF
+          {
+            "version": "${VERSION}",
+            "channel": "dev",
+            "tarball_url": "${TARBALL_URL}",
+            "sha256_url": "${TARBALL_URL}.sha256",
+            "signature_url": "${TARBALL_URL}.asc",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "min_cli_version": "1.0.0"
+          }
+          EOF
+          # Path must match R2_MANIFEST_PATHS.dev in engine/update-utils.ts
+          npx wrangler r2 object put "prism-backups/releases/channel/dev.json" --file dev.json
 
       - name: Create GitHub Release (optional, for visibility)
         env:

@@ -13,7 +13,7 @@ describe("Telegram Bot Worker", () => {
       const response = await SELF.fetch("https://example.com/health");
       expect(response.status).toBe(200);
 
-      const body = await response.json() as { status: string; timestamp: string };
+      const body = (await response.json()) as { status: string; timestamp: string };
       expect(body.status).toBe("ok");
       expect(body.timestamp).toBeDefined();
     });
@@ -51,9 +51,9 @@ describe("Telegram Bot Worker", () => {
 
   describe("Command Handlers", () => {
     it("should respond to /start command", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 1,
@@ -84,9 +84,9 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should respond to /help command", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 2,
@@ -112,9 +112,9 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should respond to /link command", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 3,
@@ -140,9 +140,9 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should respond to unknown command with help message", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 4,
@@ -166,13 +166,73 @@ describe("Telegram Bot Worker", () => {
       expect(response.status).toBe(200);
       expect(fetchSpy).toHaveBeenCalled();
     });
+
+    it("should strip @botusername suffix from commands in group chats", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const update = {
+        update_id: 100,
+        message: {
+          message_id: 100,
+          from: { id: 12345, is_bot: false, first_name: "Test" },
+          chat: { id: 12345, type: "supergroup" as const },
+          text: "/start@prism_agent_bot",
+          date: Date.now(),
+        },
+      };
+
+      const ctx = createExecutionContext();
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+
+      const response = await worker.fetch(request, env, ctx);
+      expect(response.status).toBe(200);
+      const sentBody = fetchSpy.mock.calls[0]?.[1] as { body?: string } | undefined;
+      expect(sentBody?.body).toContain("Welcome to Prism");
+    });
   });
 
   describe("Link Code Handling", () => {
+    it("should accept LINK-XXXXXX link code with prefix", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const update = {
+        update_id: 200,
+        message: {
+          message_id: 200,
+          from: { id: 12345, is_bot: false, first_name: "Test" },
+          chat: { id: 12345, type: "private" as const },
+          text: "LINK-ABC123",
+          date: Date.now(),
+        },
+      };
+
+      const ctx = createExecutionContext();
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+
+      const response = await worker.fetch(request, env, ctx);
+      expect(response.status).toBe(200);
+      expect(fetchSpy).toHaveBeenCalled();
+      const sentBody = fetchSpy.mock.calls[0]?.[1] as { body?: string } | undefined;
+      const parsed = JSON.parse(sentBody?.body ?? "{}") as { code?: string };
+      expect(parsed.code).toBe("LINK-ABC123");
+    });
+
     it("should accept 6-character link code", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 5,
@@ -198,9 +258,9 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should ignore non-link-code text messages", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 6,
@@ -229,12 +289,14 @@ describe("Telegram Bot Worker", () => {
 
   describe("Registration Flow", () => {
     it("should handle /register command and call Prism API", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(
-          JSON.stringify({ ok: true, result: { api_key: "test-key", user_id: "user_1" } }),
-          { status: 200 },
-        ),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ok: true, result: { api_key: "test-key", user_id: "user_1" } }),
+            { status: 200 },
+          ),
+        );
 
       const update = {
         update_id: 7,
@@ -262,10 +324,9 @@ describe("Telegram Bot Worker", () => {
 
     it("should handle registration failure gracefully", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(
-          JSON.stringify({ ok: false, error: "User already exists" }),
-          { status: 400 },
-        ),
+        new Response(JSON.stringify({ ok: false, error: "User already exists" }), {
+          status: 400,
+        }),
       );
 
       const update = {
@@ -295,10 +356,9 @@ describe("Telegram Bot Worker", () => {
   describe("Whoami Command", () => {
     it("should call /v1/whoami endpoint", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(
-          JSON.stringify({ ok: true, result: { user_id: "user_1", tier: "free" } }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ ok: true, result: { user_id: "user_1", tier: "free" } }), {
+          status: 200,
+        }),
       );
 
       const update = {
@@ -325,12 +385,11 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should handle unregistered user", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(
-          JSON.stringify({ ok: false, error: "User not found" }),
-          { status: 404 },
-        ),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: false, error: "User not found" }), { status: 404 }),
+        );
 
       const update = {
         update_id: 10,
@@ -394,9 +453,9 @@ describe("Telegram Bot Worker", () => {
 
   describe("Edge Cases", () => {
     it("should ignore updates without messages", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 12,
@@ -416,9 +475,9 @@ describe("Telegram Bot Worker", () => {
     });
 
     it("should handle messages without text", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
       const update = {
         update_id: 13,
@@ -441,6 +500,35 @@ describe("Telegram Bot Worker", () => {
       const response = await worker.fetch(request, env, ctx);
       expect(response.status).toBe(200);
       expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("should return 200 OK even when downstream processing throws (no retry storm)", async () => {
+      // Simulate downstream failure (e.g., Telegram sendMessage network error)
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+        new Error("downstream service unavailable"),
+      );
+
+      const update = {
+        update_id: 14,
+        message: {
+          message_id: 14,
+          from: { id: 12345, is_bot: false, first_name: "Test" },
+          chat: { id: 12345, type: "private" as const },
+          text: "/start",
+          date: Date.now(),
+        },
+      };
+
+      const ctx = createExecutionContext();
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+
+      // Webhook MUST return 200; Telegram retries on >=400 which would cause a retry storm
+      const response = await worker.fetch(request, env, ctx);
+      expect(response.status).toBe(200);
     });
   });
 });

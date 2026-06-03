@@ -79,9 +79,7 @@ export function fetchR2Manifest(
       );
     }
 
-    const manifest = (yield* Effect.tryPromise(() =>
-      response.json(),
-    )) as R2Manifest;
+    const manifest = (yield* Effect.tryPromise(() => response.json())) as R2Manifest;
     return manifest;
   });
 }
@@ -123,15 +121,22 @@ export function fetchGitHubRelease(
     }
 
     if (channel === "stable") {
-      const release = (yield* Effect.tryPromise(() =>
-        response.json(),
-      )) as GitHubRelease | undefined;
+      const release = (yield* Effect.tryPromise(() => response.json())) as
+        | GitHubRelease
+        | undefined;
       return release ?? null;
     }
 
-    const allReleases: GitHubRelease[] = [];
-    let pageUrl: string | null = url;
-    let pageCount = 0;
+    const firstPageReleases = (yield* Effect.tryPromise(() => response.json())) as GitHubRelease[];
+
+    const allReleases: GitHubRelease[] = Array.isArray(firstPageReleases)
+      ? [...firstPageReleases]
+      : [];
+
+    const linkHeader = response.headers.get("link");
+    const nextMatch = linkHeader ? linkHeader.match(/<([^>]+)>;\s*rel="next"/) : null;
+    let pageUrl: string | null = nextMatch?.[1] ?? null;
+    let pageCount = 1;
     const maxPages = 3;
 
     while (pageUrl !== null && pageCount < maxPages) {
@@ -151,9 +156,7 @@ export function fetchGitHubRelease(
         );
       }
 
-      const releases = (yield* Effect.tryPromise(() =>
-        pageResponse.json(),
-      )) as GitHubRelease[];
+      const releases = (yield* Effect.tryPromise(() => pageResponse.json())) as GitHubRelease[];
 
       if (!Array.isArray(releases) || releases.length === 0) {
         break;
@@ -161,23 +164,16 @@ export function fetchGitHubRelease(
 
       allReleases.push(...releases);
 
-      const linkHeader = pageResponse.headers.get("link");
-      if (linkHeader) {
-        const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-        pageUrl = nextMatch?.[1] ?? null;
-      } else {
-        pageUrl = null;
-      }
+      const nextLink = pageResponse.headers.get("link");
+      const nextPageMatch = nextLink ? nextLink.match(/<([^>]+)>;\s*rel="next"/) : null;
+      pageUrl = nextPageMatch?.[1] ?? null;
     }
 
     if (allReleases.length === 0) {
       return null;
     }
 
-    const filtered =
-      channel === "beta"
-        ? allReleases.filter((r) => r.prerelease)
-        : allReleases;
+    const filtered = channel === "beta" ? allReleases.filter((r) => r.prerelease) : allReleases;
 
     if (filtered.length === 0) {
       return null;
@@ -228,9 +224,7 @@ export function fetchLatestRelease(
   r2PublicUrl?: string,
 ): Effect.Effect<ReleaseInfo | null, Error> {
   return Effect.gen(function* () {
-    const r2Result = yield* Effect.either(
-      fetchR2Manifest(channel, r2PublicUrl),
-    );
+    const r2Result = yield* Effect.either(fetchR2Manifest(channel, r2PublicUrl));
 
     if (r2Result._tag === "Right" && r2Result.right) {
       const manifest = r2Result.right;

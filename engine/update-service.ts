@@ -23,8 +23,10 @@ export interface UpdateService {
   readonly getCurrentVersion: () => string;
 }
 
-export class UpdateServiceTag extends Context.Tag("UpdateService")
-  <UpdateServiceTag, UpdateService>() {}
+export class UpdateServiceTag extends Context.Tag("UpdateService")<
+  UpdateServiceTag,
+  UpdateService
+>() {}
 
 export const UpdateServiceLive = Effect.gen(function* () {
   const config = yield* ConfigService;
@@ -42,9 +44,7 @@ export const UpdateServiceLive = Effect.gen(function* () {
       }
 
       if (!isValidVersion(release.version)) {
-        return yield* Effect.fail(
-          new Error(`Invalid version format: ${release.version}`),
-        );
+        return yield* Effect.fail(new Error(`Invalid version format: ${release.version}`));
       }
 
       if (compareVersions(release.version, current) <= 0) {
@@ -65,15 +65,11 @@ export const UpdateServiceLive = Effect.gen(function* () {
       const release = yield* fetchLatestRelease(repo, channel);
 
       if (!release || release.version !== version) {
-        return yield* Effect.fail(
-          new Error(`Version ${version} not found in release channel`),
-        );
+        return yield* Effect.fail(new Error(`Version ${version} not found in release channel`));
       }
 
       if (!release.tarballUrl) {
-        return yield* Effect.fail(
-          new Error(`No tarball URL for version ${version}`),
-        );
+        return yield* Effect.fail(new Error(`No tarball URL for version ${version}`));
       }
 
       const workDir = join(tmpdir(), `prism-update-${Date.now()}`);
@@ -82,14 +78,10 @@ export const UpdateServiceLive = Effect.gen(function* () {
 
       try {
         logger.info(`Downloading ${release.tarballUrl} → ${tarballPath}`);
-        const downloadResponse = yield* Effect.tryPromise(() =>
-          fetch(release.tarballUrl),
-        );
+        const downloadResponse = yield* Effect.tryPromise(() => fetch(release.tarballUrl));
         if (!downloadResponse.ok) {
           return yield* Effect.fail(
-            new Error(
-              `Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`,
-            ),
+            new Error(`Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`),
           );
         }
         if (!downloadResponse.body) {
@@ -106,19 +98,21 @@ export const UpdateServiceLive = Effect.gen(function* () {
             ),
           );
         }
-        const expectedHash = yield* Effect.tryPromise(() =>
-          fetch(release.sha256Url).then((r) => r.text()),
-        );
-        const expectedHashTrimmed = expectedHash.trim().split(/\s+/)[0] ?? "";
-        const fileBuffer = readFileSync(tarballPath);
-        const actualHash = createHash("sha256")
-          .update(fileBuffer)
-          .digest("hex");
-        if (actualHash !== expectedHashTrimmed) {
+        const shaResponse = yield* Effect.tryPromise(() => fetch(release.sha256Url));
+        if (!shaResponse.ok) {
           return yield* Effect.fail(
             new Error(
-              `SHA-256 mismatch: expected ${expectedHashTrimmed}, got ${actualHash}`,
+              `Failed to fetch SHA-256 checksum: ${shaResponse.status} ${shaResponse.statusText}`,
             ),
+          );
+        }
+        const expectedHash = yield* Effect.tryPromise(() => shaResponse.text());
+        const expectedHashTrimmed = expectedHash.trim().split(/\s+/)[0] ?? "";
+        const fileBuffer = readFileSync(tarballPath);
+        const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
+        if (actualHash !== expectedHashTrimmed) {
+          return yield* Effect.fail(
+            new Error(`SHA-256 mismatch: expected ${expectedHashTrimmed}, got ${actualHash}`),
           );
         }
         logger.info("SHA-256 checksum verified");
@@ -131,19 +125,13 @@ export const UpdateServiceLive = Effect.gen(function* () {
 
         // Tarballs may extract into either workDir or workDir/prism-liquidity-agent.
         // Detect whichever exists and contains the expected files.
-        const candidateRoots = [
-          workDir,
-          join(workDir, "prism-liquidity-agent"),
-        ];
+        const candidateRoots = [workDir, join(workDir, "prism-liquidity-agent")];
         const extractedDir = candidateRoots.find(
-          (p) =>
-            existsSync(p) && existsSync(join(p, "package.json")),
+          (p) => existsSync(p) && existsSync(join(p, "package.json")),
         );
         if (!extractedDir) {
           return yield* Effect.fail(
-            new Error(
-              "Extracted tarball missing package.json — cannot determine install root",
-            ),
+            new Error("Extracted tarball missing package.json — cannot determine install root"),
           );
         }
 
@@ -166,10 +154,7 @@ export const UpdateServiceLive = Effect.gen(function* () {
             rmSync(stagedRoot, { recursive: true, force: true });
           }
           // Copy the new tree into a staging dir beside the install root.
-          execSync(
-            `cp -R "${extractedDir}/." "${stagedRoot}/"`,
-            { stdio: "inherit" },
-          );
+          execSync(`cp -R "${extractedDir}/." "${stagedRoot}/"`, { stdio: "inherit" });
 
           // Back up the current install so we can roll back on swap failure.
           if (existsSync(backupRoot)) {
@@ -177,10 +162,35 @@ export const UpdateServiceLive = Effect.gen(function* () {
           }
           const installName = installRoot.split("/").pop() ?? "prism-liquidity-agent";
           const currentBackup = join(installRoot, `..`, `.prism-prev-${installName}`);
-          execSync(`mv "${installRoot}" "${currentBackup}"`, { stdio: "inherit" });
-          execSync(`mv "${stagedRoot}" "${installRoot}"`, { stdio: "inherit" });
-          // Keep the previous install as a sibling backup until the user confirms.
-          execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
+
+          // Atomic swap with rollback: if any rename fails after the current
+          // install has been moved aside, restore the previous install in place.
+          try {
+            execSync(`mv "${installRoot}" "${currentBackup}"`, { stdio: "inherit" });
+            try {
+              execSync(`mv "${stagedRoot}" "${installRoot}"`, { stdio: "inherit" });
+            } catch (swapErr) {
+              // stagedRoot -> installRoot failed; restore the previous install.
+              if (existsSync(currentBackup) && !existsSync(installRoot)) {
+                execSync(`mv "${currentBackup}" "${installRoot}"`);
+              }
+              throw swapErr;
+            }
+            // Keep the previous install as a sibling backup until the user confirms.
+            if (existsSync(currentBackup)) {
+              execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
+            }
+          } catch (swapErr) {
+            // Best-effort cleanup of any orphaned staging directory.
+            if (existsSync(stagedRoot)) {
+              try {
+                rmSync(stagedRoot, { recursive: true, force: true });
+              } catch {
+                // ignore cleanup failure; surface the original swap error
+              }
+            }
+            throw swapErr;
+          }
         });
 
         logger.info(

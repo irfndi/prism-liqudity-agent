@@ -17,6 +17,16 @@ import { createLogger } from "../engine/logger.js";
 
 const logger = createLogger("update");
 
+class UpdateAbort extends Error {
+  constructor(
+    message: string,
+    readonly exitCode = 1,
+  ) {
+    super(message);
+    this.name = "UpdateAbort";
+  }
+}
+
 export const updateCommand = new Command("update")
   .description("Check for and apply updates")
   .option("--check-only", "Only check for updates, don't apply")
@@ -26,14 +36,13 @@ export const updateCommand = new Command("update")
     const current = getCurrentVersion();
     console.log(`Current version: ${current}`);
 
+    let workDir: string | null = null;
     try {
       const repo = "irfndi/prism-liquidity-agent";
       const channel = options.channel as "stable" | "beta" | "dev";
       const r2Url = options.r2Url as string;
 
-      const release = await Effect.runPromise(
-        fetchLatestRelease(repo, channel, r2Url),
-      );
+      const release = await Effect.runPromise(fetchLatestRelease(repo, channel, r2Url));
 
       if (!release) {
         console.log("✓ Already up to date");
@@ -43,9 +52,7 @@ export const updateCommand = new Command("update")
       const latest = release.version;
 
       if (!isValidVersion(latest)) {
-        logger.error("Invalid version format", { version: latest });
-        console.error("Error: Invalid version format");
-        process.exit(1);
+        throw new UpdateAbort(`Invalid version format: ${latest}`);
       }
 
       if (compareVersions(latest, current) <= 0) {
@@ -64,83 +71,84 @@ export const updateCommand = new Command("update")
       }
 
       if (!release.tarballUrl) {
-        console.error(`Error: No tarball URL available for version ${latest}`);
-        process.exit(1);
+        throw new UpdateAbort(`No tarball URL available for version ${latest}`);
       }
 
-      const workDir = join(tmpdir(), `prism-update-${Date.now()}`);
+      workDir = join(tmpdir(), `prism-update-${Date.now()}`);
       mkdirSync(workDir, { recursive: true });
       const tarballName = `prism-v${latest}.tar.gz`;
       const tarballPath = join(workDir, tarballName);
 
-      try {
-        console.log(`Downloading from ${release.source === "r2" ? "R2" : "GitHub"}...`);
-        const downloadResponse = await fetch(release.tarballUrl);
-        if (!downloadResponse.ok) {
-          console.error(
-            `Error: Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`,
+      console.log(`Downloading from ${release.source === "r2" ? "R2" : "GitHub"}...`);
+      const downloadResponse = await fetch(release.tarballUrl);
+      if (!downloadResponse.ok) {
+        throw new UpdateAbort(
+          `Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`,
+        );
+      }
+      if (!downloadResponse.body) {
+        throw new UpdateAbort("Download response has no body");
+      }
+      await pipeline(downloadResponse.body, createWriteStream(tarballPath));
+      console.log(`✓ Downloaded to ${tarballPath}`);
+
+      if (release.sha256Url) {
+        console.log("Verifying SHA-256 checksum...");
+        const expectedHashResponse = await fetch(release.sha256Url);
+        if (!expectedHashResponse.ok) {
+          throw new UpdateAbort(
+            `Failed to fetch SHA-256 checksum: ${expectedHashResponse.status} ${expectedHashResponse.statusText}`,
           );
-          process.exit(1);
         }
-        if (!downloadResponse.body) {
-          console.error("Error: Download response has no body");
-          process.exit(1);
+        const expectedHash = (await expectedHashResponse.text()).trim().split(/\s+/)[0] ?? "";
+        const fileBuffer = readFileSync(tarballPath);
+        const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
+        if (actualHash !== expectedHash) {
+          throw new UpdateAbort(`SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`);
         }
-        await pipeline(downloadResponse.body, createWriteStream(tarballPath));
-        console.log(`✓ Downloaded to ${tarballPath}`);
-
-        if (release.sha256Url) {
-          console.log("Verifying SHA-256 checksum...");
-          const expectedHashResponse = await fetch(release.sha256Url);
-          const expectedHash = (await expectedHashResponse.text())
-            .trim()
-            .split(/\s+/)[0] ?? "";
-          const fileBuffer = readFileSync(tarballPath);
-          const actualHash = createHash("sha256")
-            .update(fileBuffer)
-            .digest("hex");
-          if (actualHash !== expectedHash) {
-            console.error(
-              `Error: SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`,
-            );
-            process.exit(1);
-          }
-          console.log("✓ SHA-256 checksum verified");
-        }
-
-        console.log("Extracting tarball...");
-        execSync(`tar -xzf "${tarballPath}" -C "${workDir}"`, { stdio: "inherit" });
-
-        const extractedDir = join(workDir, "prism-liquidity-agent");
-        if (!existsSync(extractedDir)) {
-          console.error("Error: Extracted tarball missing expected directory");
-          process.exit(1);
-        }
-
-        console.log("Installing dependencies...");
-        execSync("bun install", { cwd: extractedDir, stdio: "inherit" });
-
-        console.log("Copying files to current directory...");
-        execSync("cp -r ./* .[!.]* ../../", {
-          cwd: extractedDir,
-          stdio: "inherit",
-        });
-
-        logger.info(`Updated to ${latest} from ${release.source}`);
-        console.log(`✓ Updated to ${latest}`);
-      } finally {
-        if (existsSync(workDir)) {
-          rmSync(workDir, { recursive: true, force: true });
-        }
+        console.log("✓ SHA-256 checksum verified");
       }
+
+      console.log("Extracting tarball...");
+      execSync(`tar -xzf "${tarballPath}" -C "${workDir}"`, { stdio: "inherit" });
+
+      // R2 tarballs extract at top level; legacy ones had a subdir.
+      const candidateRoots = [workDir, join(workDir, "prism-liquidity-agent")];
+      const extractedDir = candidateRoots.find(
+        (p) => existsSync(p) && existsSync(join(p, "package.json")),
+      );
+      if (!extractedDir) {
+        throw new UpdateAbort(
+          "Extracted tarball missing package.json — cannot determine install root",
+        );
+      }
+
+      console.log("Installing dependencies...");
+      execSync("bun install", { cwd: extractedDir, stdio: "inherit" });
+
+      // Use absolute destDir: relative `../..` from extractedDir lands in /tmp.
+      const destDir = process.cwd();
+      console.log(`Copying files to ${destDir}...`);
+      execSync(`cp -R "${extractedDir}/." "${destDir}/"`, {
+        stdio: "inherit",
+      });
+
+      logger.info(`Updated to ${latest} from ${release.source}`);
+      console.log(`✓ Updated to ${latest}`);
     } catch (err) {
-      if (err instanceof Error) {
-        logger.error("Update failed", { error: err.message });
-        console.error("Error:", err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      const exitCode = err instanceof UpdateAbort ? err.exitCode : 1;
+      if (err instanceof UpdateAbort) {
+        console.error("Error:", message);
       } else {
-        logger.error("Update failed", { error: String(err) });
-        console.error("Error checking for updates:", err);
+        logger.error("Update failed", { error: message });
+        console.error("Error:", message);
       }
-      process.exit(1);
+      process.exit(exitCode);
+    } finally {
+      // Always clean up the work directory, regardless of how we exit.
+      if (workDir && existsSync(workDir)) {
+        rmSync(workDir, { recursive: true, force: true });
+      }
     }
   });

@@ -27,12 +27,12 @@ cloudflare/
 
 ## Live Deployment (Production)
 
-| Resource | Value | Status |
-|----------|-------|--------|
-| API Worker | https://prism-api.irfndi.workers.dev | ✅ Live |
-| Telegram Bot | https://prism-telegram-bot.irfndi.workers.dev | ✅ Live |
-| Telegram Bot Username | @prism_agent_bot | ✅ Active |
-| Cloudflare Account ID | `a37da71c38a2f7ab732057d87d5d0f6e` | Active |
+| Resource              | Value                                         | Status    |
+| --------------------- | --------------------------------------------- | --------- |
+| API Worker            | https://prism-api.irfndi.workers.dev          | ✅ Live   |
+| Telegram Bot          | https://prism-telegram-bot.irfndi.workers.dev | ✅ Live   |
+| Telegram Bot Username | @prism_agent_bot                              | ✅ Active |
+| Cloudflare Account ID | `a37da71c38a2f7ab732057d87d5d0f6e`            | Active    |
 
 ## Quick Setup (for an AI agent to execute)
 
@@ -143,28 +143,29 @@ curl "https://api.telegram.org/botYOUR_BOT_TOKEN/getWebhookInfo"
 
 ## API Endpoints
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/health` | GET | None | Health check |
-| `/v1/register` | POST | None | Register new user, returns API key |
-| `/v1/login` | POST | Bearer | Validate API key, returns user info |
-| `/v1/whoami` | GET | Bearer | Get current user info |
-| `/v1/link-telegram/start` | POST | Bearer | Generate 6-char link code |
-| `/v1/link-telegram/confirm` | POST | None | Confirm Telegram link with code |
-| `/v1/issue` | POST | Bearer | File GitHub issue |
-| `/v1/agent-status` | POST | None | Get agent status (for Telegram bot) |
-| `/v1/register-telegram` | POST | None | Register via Telegram (for bot) |
+| Endpoint                    | Method | Auth   | Description                           |
+| --------------------------- | ------ | ------ | ------------------------------------- |
+| `/health`                   | GET    | None   | Health check                          |
+| `/v1/register`              | POST   | None   | Register new user, returns API key    |
+| `/v1/login`                 | POST   | Bearer | Validate API key, returns user info   |
+| `/v1/whoami`                | GET    | Bearer | Get current user info                 |
+| `/v1/whoami-telegram`       | POST   | None   | Look up user by telegram_id (for bot) |
+| `/v1/link-telegram/start`   | POST   | Bearer | Generate `LINK-XXXXXX` code           |
+| `/v1/link-telegram/confirm` | POST   | None   | Confirm Telegram link with code       |
+| `/v1/register-telegram`     | POST   | None   | Register via Telegram (for bot)       |
+| `/v1/agent-status`          | POST   | None   | Get agent status (for Telegram bot)   |
+| `/v1/issue`                 | POST   | Bearer | File GitHub issue                     |
 
 ## Telegram Bot Commands
 
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message |
+| Command     | Description                                |
+| ----------- | ------------------------------------------ |
+| `/start`    | Welcome message                            |
 | `/register` | Create new Prism account (returns API key) |
-| `/link` | Instructions to link existing account |
-| `/whoami` | Show account info (user ID, tier) |
-| `/status` | Show agent status (positions, P&L) |
-| `/help` | List all commands |
+| `/link`     | Instructions to link existing account      |
+| `/whoami`   | Show account info (user ID, tier)          |
+| `/status`   | Show agent status (positions, P&L)         |
+| `/help`     | List all commands                          |
 
 Send a 6-character code to link your Telegram to an existing account.
 
@@ -204,6 +205,7 @@ bunx vitest run workers/telegram-bot/telegram-bot.test.ts
 ```
 
 ### Test coverage: 16 tests for Telegram bot
+
 - Health check (1)
 - Webhook security (2)
 - Command handlers (4)
@@ -257,6 +259,7 @@ wrangler d1 migrations apply prism-db --remote
 ## CI/CD
 
 GitHub Actions workflow at `.github/workflows/deploy-cloudflare.yml` automatically:
+
 1. Runs on push to `main` (when `cloudflare/**` changes)
 2. Installs dependencies with Bun
 3. Runs type check
@@ -265,6 +268,7 @@ GitHub Actions workflow at `.github/workflows/deploy-cloudflare.yml` automatical
 6. Deploys Telegram bot worker
 
 **Required GitHub Secrets:**
+
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token with Workers, D1, KV, R2, Vectorize write access
 - `CLOUDFLARE_ACCOUNT_ID` — `a37da71c38a2f7ab732057d87d5d0f6e`
 
@@ -333,17 +337,18 @@ wrangler kv namespace list
 
 In `[vars]` section of `wrangler.toml`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENVIRONMENT` | `production` | Environment name |
-| `TELEGRAM_WEBHOOK_URL` | `https://prism-telegram-bot.irfndi.workers.dev/webhook` | Webhook URL |
-| `API_BASE_URL` | `https://prism-api.irfndi.workers.dev` | API URL (used by Telegram bot) |
+| Variable               | Default                                                 | Description                    |
+| ---------------------- | ------------------------------------------------------- | ------------------------------ |
+| `ENVIRONMENT`          | `production`                                            | Environment name               |
+| `TELEGRAM_WEBHOOK_URL` | `https://prism-telegram-bot.irfndi.workers.dev/webhook` | Webhook URL                    |
+| `API_BASE_URL`         | `https://prism-api.irfndi.workers.dev`                  | API URL (used by Telegram bot) |
 
 ## Staging Environment
 
 To deploy a staging environment:
 
 1. Create separate resources:
+
    ```bash
    wrangler d1 create prism-db-staging
    wrangler kv namespace create "prism-cache-staging"

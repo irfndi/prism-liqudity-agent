@@ -5,11 +5,13 @@ Notes for AI agent harnesses (OpenClaw, Hermes, acpx, custom agents) and OpenCod
 ## TL;DR for agent harnesses
 
 If you're an agent (OpenClaw, Hermes, acpx, or custom) being asked to set up or operate Prism for a user, you do NOT need to:
+
 - ❌ Deploy Cloudflare workers (already deployed — see [Live deployment](#live-deployment-production))
 - ❌ Create D1/KV/R2/Vectorize resources (already exist)
 - ❌ Set Cloudflare secrets (already configured)
 
 You DO need to:
+
 - ✅ Clone the repo and install dependencies
 - ✅ Run `prism register` (calls the deployed API, returns an API key)
 - ✅ Run `prism setup` (configures Helius key + watchlist)
@@ -29,7 +31,7 @@ prism dev                                         # start paper trading
 - **Runtime**: Bun 1.2+ (dev, tests, build). Node 20+ for Docker.
 - **Language**: TypeScript with `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`. Easy to trip over — read errors carefully.
 - **Framework**: [Effect-TS](https://effect.website) for DI (`Context.Tag` + `Layer`). No MCP server, no Anthropic SDK calls in the hot path.
-- **Storage (engine)**: SQLite via `bun:sqlite` + `sqlite-vec` (NOT Chroma — see *Things docs get wrong*).
+- **Storage (engine)**: SQLite via `bun:sqlite` + `sqlite-vec` (NOT Chroma — see _Things docs get wrong_).
 - **Storage (cloudflare)**: D1 database + KV + R2 + Vectorize. Separate subproject.
 - **Build**: `tsdown` (entry: `engine/index.ts` → `dist/engine/index.js`).
 - **Lint**: `oxlint` (NOT eslint) with `typescript`/`unicorn`/`oxc` plugins. Config at `.oxlintrc.json`. `correctness: error`, `no-unused-vars` and `require-yield` are explicitly off.
@@ -93,18 +95,19 @@ CI (`.github/workflows/deploy-cloudflare.yml`) on push to `main` (when `cloudfla
 
 ## Live deployment (production)
 
-| Resource | Value | Status |
-|----------|-------|--------|
-| API Worker | `https://prism-api.irfndi.workers.dev` | ✅ Live |
-| Telegram Bot | `https://prism-telegram-bot.irfndi.workers.dev` | ✅ Live |
-| Bot username | `@prism_agent_bot` | ✅ Active |
-| Cloudflare Account ID | `a37da71c38a2f7ab732057d87d5d0f6e` | Active |
-| D1 database | `prism-db` (`0657c2b3-fdea-4b33-b11b-8d0a7b27cbc8`) | Active |
-| KV namespace | `prism-cache` (`78d7fb5d3fab494dbc8f2940e524f22d`) | Active |
-| R2 bucket | `prism-backups` | Active |
-| Vectorize index | `prism-memory` (384d cosine) | Active |
+| Resource              | Value                                               | Status    |
+| --------------------- | --------------------------------------------------- | --------- |
+| API Worker            | `https://prism-api.irfndi.workers.dev`              | ✅ Live   |
+| Telegram Bot          | `https://prism-telegram-bot.irfndi.workers.dev`     | ✅ Live   |
+| Bot username          | `@prism_agent_bot`                                  | ✅ Active |
+| Cloudflare Account ID | `a37da71c38a2f7ab732057d87d5d0f6e`                  | Active    |
+| D1 database           | `prism-db` (`0657c2b3-fdea-4b33-b11b-8d0a7b27cbc8`) | Active    |
+| KV namespace          | `prism-cache` (`78d7fb5d3fab494dbc8f2940e524f22d`)  | Active    |
+| R2 bucket             | `prism-backups`                                     | Active    |
+| Vectorize index       | `prism-memory` (384d cosine)                        | Active    |
 
 GitHub secrets required for CI/CD:
+
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token with Workers, D1, KV, R2, Vectorize write access
 - `CLOUDFLARE_ACCOUNT_ID` — `a37da71c38a2f7ab732057d87d5d0f6e`
 
@@ -162,13 +165,14 @@ Don't import service classes directly. The whole runtime is one `Effect.gen` blo
 
 ## CLI commands (commander)
 
-13 subcommands, all in `cli/`. Most spawn the engine or call the Cloudflare API:
+14 subcommands, all in `cli/`. Most spawn the engine or call the Cloudflare API:
+
 - `setup` — interactive `.env` wizard (was `ops/setup.ts`)
 - `register` — calls `POST /v1/register`, stores API key locally
-- `login` — validates existing API key
+- `login` — validates existing API key via `POST /v1/login`
 - `whoami` — calls `GET /v1/whoami`
 - `wallet {generate,import,show}` — non-custodial local keypair
-- `telegram {link,unlink}` — link/unlink Telegram
+- `link-telegram` — calls `POST /v1/link-telegram/start` to issue a 6-char code
 - `subscription {status,renew}` — tier info
 - `issue` — file GitHub issue via Cloudflare
 - `support` — contact info
@@ -176,6 +180,10 @@ Don't import service classes directly. The whole runtime is one `Effect.gen` blo
 - `backtest` — spawns `bun run backtest` (ops)
 - `update` — checks/auto-applies updates
 - `version` — current version
+
+All API-bound commands share `cli/api.ts` (`prismApiPost` / `prismApiGet` / `readCredentials` / `writeCredentials`).
+The base URL defaults to `https://prism-api.irfndi.workers.dev` and can be overridden with
+`PRISM_API_URL`. Credentials are stored at `~/.config/prism/credentials.json` with `0o600` perms.
 
 `prism` binary is `./cli/index.ts` (run via `bun run dev` or built CLI).
 
@@ -242,9 +250,13 @@ In test mode (`VITEST=true` or `NODE_ENV=test`), missing `ANTHROPIC_API_KEY` / `
 2. Compares `manifest.version` with the locally installed version (from `package.json`)
 3. If newer, downloads the tarball from `manifest.tarball_url`
 4. Verifies SHA-256 against `manifest.sha256_url` (mandatory, mismatch aborts)
-5. Optionally verifies GPG signature at `manifest.signature_url` (if `GPG_PRIVATE_KEY` secret is set in release workflow)
-6. Extracts to a temp dir, runs `bun install`, then `cp -r` the files over the current install
-7. Cleans up temp dir
+5. Extracts to a temp dir, runs `bun install`, then copies the files over the current install
+6. Cleans up temp dir
+
+> **GPG signing is not yet verified client-side.** The release workflow optionally
+> uploads a `.asc` signature (when the `GPG_PRIVATE_KEY` secret is configured),
+> and the manifest points to it, but the updater does not currently call `gpg
+--verify`. Treat the `.asc` as audit metadata until verification is wired in.
 
 ### Release process (`.github/workflows/release.yml`)
 
@@ -261,6 +273,7 @@ On push of a tag matching `v*.*.*`:
 ### Fallback to GitHub Releases
 
 If R2 is unreachable, `fetchLatestRelease()` automatically falls back to GitHub Releases API and extracts the same `prism-v*.tar.gz` asset. This means the update mechanism is resilient to:
+
 - R2 outage (falls back to GitHub)
 - GitHub private/blocked (R2 still works)
 - Network issues (user can manually download from either)
@@ -309,7 +322,7 @@ prism-backups/
 - Engine tests live in `bench/*.test.ts`. There is no `tests/` directory.
 - Engine suite is Effect-Layer based: each test builds a `Layer.merge(AuditLive, DbLive(":memory:"))` and provides it to the system under test. Use this pattern for new tests.
 - `bench/audit.test.ts` mutates `bench/tmp-audit/` — do not commit it.
-- Coverage thresholds (80% / 70%) apply only to *included* files (see above). Don't read the coverage report as a project-wide signal.
+- Coverage thresholds (80% / 70%) apply only to _included_ files (see above). Don't read the coverage report as a project-wide signal.
 - Cloudflare tests live in `cloudflare/workers/**/*.test.ts` and run via `@cloudflare/vitest-pool-workers`. Must use `vitest@^3.2.0` (not 4.x) due to pool compatibility — enforced in `cloudflare/package.json`.
 - No integration tests, no mocks for Meteora SDK, no tests exercise the embedding pipeline or the main loop. `program.ts`, `adapter-service.ts`, and `engine/embeddings.ts` are all excluded from coverage and untested. The 4 engine test files cover pure logic only. CI passes with fake API keys because nothing real runs.
 

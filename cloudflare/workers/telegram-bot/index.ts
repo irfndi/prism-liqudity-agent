@@ -11,13 +11,9 @@ interface Env {
 }
 
 // Services
-class DbService extends Context.Tag("DbService")<
-  DbService,
-  { readonly db: D1Database }
->() {}
+class DbService extends Context.Tag("DbService")<DbService, { readonly db: D1Database }>() {}
 
-const DbLive = (db: D1Database) =>
-  Layer.succeed(DbService, { db });
+const DbLive = (db: D1Database) => Layer.succeed(DbService, { db });
 
 // Types
 interface TelegramUpdate {
@@ -122,10 +118,7 @@ async function handleStart(
 }
 
 // Handle /link command
-async function handleLink(
-  botToken: string,
-  chatId: number,
-): Promise<void> {
+async function handleLink(botToken: string, chatId: number): Promise<void> {
   await sendMessage(
     botToken,
     chatId,
@@ -161,11 +154,7 @@ async function handleRegister(
         `<code>prism login ${data.api_key.slice(0, 8)}...</code>`,
     );
   } else {
-    await sendMessage(
-      botToken,
-      chatId,
-      `Registration failed: ${result.error ?? "Unknown error"}`,
-    );
+    await sendMessage(botToken, chatId, `Registration failed: ${result.error ?? "Unknown error"}`);
   }
 }
 
@@ -192,7 +181,7 @@ async function handleWhoami(
   chatId: number,
   telegramId: string,
 ): Promise<void> {
-  const result = await callPrismApi(apiBaseUrl, "/v1/whoami", {
+  const result = await callPrismApi(apiBaseUrl, "/v1/whoami-telegram", {
     telegram_id: telegramId,
   });
 
@@ -201,16 +190,10 @@ async function handleWhoami(
     await sendMessage(
       botToken,
       chatId,
-      `Account Info:\n\n` +
-        `User ID: <code>${data.user_id}</code>\n` +
-        `Tier: ${data.tier}`,
+      `Account Info:\n\n` + `User ID: <code>${data.user_id}</code>\n` + `Tier: ${data.tier}`,
     );
   } else {
-    await sendMessage(
-      botToken,
-      chatId,
-      `Not registered. Use /register to create an account.`,
-    );
+    await sendMessage(botToken, chatId, `Not registered. Use /register to create an account.`);
   }
 }
 
@@ -236,20 +219,12 @@ async function handleStatus(
         `P&L: $${data.pnl.toFixed(2)}`,
     );
   } else {
-    await sendMessage(
-      botToken,
-      chatId,
-      `Agent not running or not linked.`,
-    );
+    await sendMessage(botToken, chatId, `Agent not running or not linked.`);
   }
 }
 
 // Process incoming Telegram update
-async function processUpdate(
-  db: D1Database,
-  env: Env,
-  update: TelegramUpdate,
-): Promise<void> {
+async function processUpdate(db: D1Database, env: Env, update: TelegramUpdate): Promise<void> {
   if (!update.message) return;
 
   const message = update.message;
@@ -258,16 +233,23 @@ async function processUpdate(
   const telegramId = String(message.from.id);
   const firstName = message.from.first_name;
 
-  // Handle commands
+  // Handle commands. Telegram appends "@botusername" in group chats (e.g. "/start@prism_agent_bot").
   if (text.startsWith("/")) {
-    const command = text.split(" ")[0]?.toLowerCase() ?? "";
+    const rawCommand = text.split(" ")[0] ?? "";
+    const command = rawCommand.split("@")[0]?.toLowerCase() ?? "";
 
     switch (command) {
       case "/start":
         await handleStart(db, env.TELEGRAM_BOT_TOKEN, chatId, telegramId, firstName);
         break;
       case "/register":
-        await handleRegister(env.API_BASE_URL, env.TELEGRAM_BOT_TOKEN, chatId, telegramId, firstName);
+        await handleRegister(
+          env.API_BASE_URL,
+          env.TELEGRAM_BOT_TOKEN,
+          chatId,
+          telegramId,
+          firstName,
+        );
         break;
       case "/link":
         await handleLink(env.TELEGRAM_BOT_TOKEN, chatId);
@@ -284,7 +266,7 @@ async function processUpdate(
       default:
         await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "Unknown command. Try /help");
     }
-  } else if (/^[A-Z0-9]{6}$/i.test(text.trim())) {
+  } else if (/^LINK-[A-Z0-9]{6}$/i.test(text.trim()) || /^[A-Z0-9]{6}$/i.test(text.trim())) {
     // Handle 6-character link code
     const code = text.trim().toUpperCase();
     const result = await callPrismApi(env.API_BASE_URL, "/v1/link-telegram/confirm", {
@@ -295,22 +277,23 @@ async function processUpdate(
     if (result.ok) {
       await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "Account linked successfully!");
     } else {
-      await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, `Link failed: ${result.error ?? "Invalid or expired code"}`);
+      await sendMessage(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        `Link failed: ${result.error ?? "Invalid or expired code"}`,
+      );
     }
   }
 }
 
 // Health check
-const healthHandler = () =>
-  Effect.succeed({ status: "ok", timestamp: new Date().toISOString() });
+const healthHandler = () => Effect.succeed({ status: "ok", timestamp: new Date().toISOString() });
 
 // Main app
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/health", async (c) => {
-  const result = await Effect.runPromise(
-    healthHandler().pipe(Effect.provide(DbLive(c.env.DB))),
-  );
+  const result = await Effect.runPromise(healthHandler().pipe(Effect.provide(DbLive(c.env.DB))));
   return c.json(result);
 });
 
@@ -324,7 +307,16 @@ app.post("/webhook", async (c) => {
   }
 
   const update = (await c.req.json()) as TelegramUpdate;
-  await processUpdate(c.env.DB, c.env, update);
+  // Always return 200 OK; Telegram retries with backoff on >=400, which causes
+  // retry storms when downstream services (Prism API, D1) are transiently down.
+  try {
+    await processUpdate(c.env.DB, c.env, update);
+  } catch (err) {
+    console.error("processUpdate failed", {
+      update_id: update.update_id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   return c.json({ ok: true });
 });
 
