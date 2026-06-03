@@ -124,14 +124,17 @@ echo "  4. Start trading:            prism dev"
 INSTALL_ID_FILE="$HOME/.config/prism/install-id"
 mkdir -p "$(dirname "$INSTALL_ID_FILE")"
 if [ ! -f "$INSTALL_ID_FILE" ]; then
-  if command -v uuidgen >/dev/null 2>&1; then
-    uuidgen > "$INSTALL_ID_FILE"
-  elif [ -f /proc/sys/kernel/random/uuid ]; then
-    cat /proc/sys/kernel/random/uuid > "$INSTALL_ID_FILE"
-  else
-    openssl rand -hex 16 2>/dev/null | sed -E 's/^(.{8})(.{4})(.{4})(.{4})(.{12})$/\1-\2-\3-\4-\5/' > "$INSTALL_ID_FILE" || true
+  INSTALL_ID="$(bun -e 'console.log(crypto.randomUUID())' 2>/dev/null || echo "")"
+  if [ -z "$INSTALL_ID" ]; then
+    UUID_HEX="$(od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' \n')"
+    if [ "${#UUID_HEX}" -eq 32 ]; then
+      INSTALL_ID="${UUID_HEX:0:8}-${UUID_HEX:8:4}-${UUID_HEX:12:4}-${UUID_HEX:16:4}-${UUID_HEX:20:12}"
+    fi
   fi
-  chmod 600 "$INSTALL_ID_FILE" 2>/dev/null || true
+  if [ -n "$INSTALL_ID" ]; then
+    echo "$INSTALL_ID" > "$INSTALL_ID_FILE"
+    chmod 600 "$INSTALL_ID_FILE" 2>/dev/null || true
+  fi
 fi
 INSTALL_ID="$(cat "$INSTALL_ID_FILE" 2>/dev/null || echo "")"
 if [ -n "$INSTALL_ID" ]; then
