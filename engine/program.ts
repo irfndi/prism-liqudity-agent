@@ -113,6 +113,22 @@ export const program = Effect.gen(function* () {
     trackedPositions.set(pos.poolAddress, pos);
   }
 
+  if (!config.paperTrading) {
+    const paperExited = yield* db
+      .getPaperExitedPositions()
+      .pipe(Effect.catchAll(() => Effect.succeed([])));
+    if (paperExited.length > 0) {
+      console.warn(
+        `Found ${paperExited.length} paper-exited position(s) from a previous paper-trading run. ` +
+          `If you entered these positions in live mode, close them manually — ` +
+          `the engine does not track on-chain state from paper trades.`,
+      );
+      for (const pos of paperExited) {
+        console.warn(`  Paper-exited: ${pos.poolAddress}`);
+      }
+    }
+  }
+
   // ─── Pool discovery ────────────────────────────────────────────────────────
 
   let poolsToScan = [...config.watchlistPools];
@@ -535,7 +551,7 @@ export const program = Effect.gen(function* () {
         yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
       } else if (decision.action === "EXIT") {
         trackedPositions.delete(decision.poolAddress);
-        yield* db.deletePosition(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        yield* db.markPaperExited(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
       } else if (
         decision.action === "REBALANCE" &&
         decision.rebalanceParams &&
