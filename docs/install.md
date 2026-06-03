@@ -21,7 +21,7 @@ What the installer does:
 2. Clones (or updates) the repo to `~/.prism`
 3. Runs `bun install` (no `--frozen-lockfile` so older Bun versions work)
 4. Writes a default `.env` (idempotent — leaves existing `.env` untouched)
-5. Symlinks `~/.local/bin/prism` → the CLI
+5. Writes a wrapper script at `~/.local/bin/prism` that runs the CLI from the install directory
 
 Then:
 
