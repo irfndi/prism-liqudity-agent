@@ -267,8 +267,9 @@ async function processUpdate(db: D1Database, env: Env, update: TelegramUpdate): 
         await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, "Unknown command. Try /help");
     }
   } else if (/^LINK-[A-Z0-9]{6}$/i.test(text.trim()) || /^[A-Z0-9]{6}$/i.test(text.trim())) {
-    // Handle 6-character link code
-    const code = text.trim().toUpperCase();
+    // The server stores codes with a `LINK-` prefix; prepend it if missing.
+    const rawCode = text.trim().toUpperCase();
+    const code = rawCode.startsWith("LINK-") ? rawCode : `LINK-${rawCode}`;
     const result = await callPrismApi(env.API_BASE_URL, "/v1/link-telegram/confirm", {
       code,
       telegram_id: telegramId,

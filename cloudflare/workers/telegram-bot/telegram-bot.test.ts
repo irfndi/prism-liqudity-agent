@@ -229,6 +229,38 @@ describe("Telegram Bot Worker", () => {
       expect(parsed.code).toBe("LINK-ABC123");
     });
 
+    it("should prepend LINK- to a bare 6-character code before confirming", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const update = {
+        update_id: 201,
+        message: {
+          message_id: 201,
+          from: { id: 12345, is_bot: false, first_name: "Test" },
+          chat: { id: 12345, type: "private" as const },
+          text: "abc123",
+          date: Date.now(),
+        },
+      };
+
+      const ctx = createExecutionContext();
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+
+      const response = await worker.fetch(request, env, ctx);
+      expect(response.status).toBe(200);
+      const sentBody = fetchSpy.mock.calls[0]?.[1] as { body?: string } | undefined;
+      const parsed = JSON.parse(sentBody?.body ?? "{}") as { code?: string };
+      // The server stores codes with LINK- prefix; a bare 6-char must be
+      // normalized before forwarding or the lookup will fail.
+      expect(parsed.code).toBe("LINK-ABC123");
+    });
+
     it("should accept 6-character link code", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")

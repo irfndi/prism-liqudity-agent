@@ -2,9 +2,10 @@ import { Command } from "commander";
 import { execSync } from "child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { pipeline } from "stream/promises";
-import { join } from "path";
+import { dirname, join, resolve } from "path";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
+import { fileURLToPath } from "url";
 import { getCurrentVersion } from "../engine/version.js";
 import {
   compareVersions,
@@ -25,6 +26,33 @@ class UpdateAbort extends Error {
     super(message);
     this.name = "UpdateAbort";
   }
+}
+
+// Walk up from this CLI's location to the Prism install root. Required so
+// that `prism update` is safe to run from any directory — using process.cwd()
+// would let the swap clobber an unrelated working dir.
+function resolveInstallRoot(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  let dir = resolve(here);
+  for (let i = 0; i < 10; i++) {
+    const pkgPath = join(dir, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
+          name?: string;
+        };
+        if (pkg.name === "prism-liquidity-agent" || pkg.name === "prism") {
+          return dir;
+        }
+      } catch {
+        // fall through to keep walking
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return resolve(here);
 }
 
 export const updateCommand = new Command("update")
@@ -131,7 +159,7 @@ export const updateCommand = new Command("update")
 
       // Atomic swap: stage new files alongside the install root, then rename.
       // A direct copy into the live install can leave it half-updated on failure.
-      const installRoot = process.cwd();
+      const installRoot = resolveInstallRoot();
       const installName = installRoot.split("/").pop() ?? "prism-liquidity-agent";
       const stagedRoot = join(installRoot, "..", `.prism-update-stage`);
       const backupRoot = join(installRoot, "..", `.prism-update-backup`);
