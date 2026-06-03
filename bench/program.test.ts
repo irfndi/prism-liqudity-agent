@@ -58,6 +58,7 @@ describe("estimatePositionValue", () => {
       trailingStopThreshold: null,
       highestValueUsd: null,
       lastRebalanceAt: 0,
+      paperExitedAt: null,
     };
   }
 

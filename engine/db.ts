@@ -231,6 +231,15 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
       `);
     },
   },
+  {
+    version: 6,
+    name: "add_paper_exited_at",
+    up(db) {
+      if (!hasColumn(db, "positions", "paper_exited_at")) {
+        db.exec("ALTER TABLE positions ADD COLUMN paper_exited_at INTEGER");
+      }
+    },
+  },
 ];
 
 function runMigrations(db: Database) {

@@ -529,6 +529,7 @@ export const program = Effect.gen(function* () {
           trailingStopThreshold: null,
           highestValueUsd: null,
           lastRebalanceAt: 0,
+          paperExitedAt: null,
         };
         trackedPositions.set(decision.poolAddress, pos);
         yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
@@ -627,6 +628,7 @@ export const program = Effect.gen(function* () {
             trailingStopThreshold: null,
             highestValueUsd: null,
             lastRebalanceAt: 0,
+            paperExitedAt: null,
           };
           trackedPositions.set(decision.poolAddress, pos);
           yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));

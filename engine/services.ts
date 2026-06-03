@@ -255,6 +255,7 @@ export interface DbApi {
     trailingStopThreshold: number | null;
     highestValueUsd: number | null;
     lastRebalanceAt: number;
+    paperExitedAt: number | null;
   }) => Effect.Effect<void, unknown>;
   readonly getPosition: (poolAddress: string) => Effect.Effect<
     {
@@ -274,6 +275,7 @@ export interface DbApi {
       trailingStopThreshold: number | null;
       highestValueUsd: number | null;
       lastRebalanceAt: number;
+      paperExitedAt: number | null;
     } | null,
     unknown
   >;
@@ -295,10 +297,34 @@ export interface DbApi {
       trailingStopThreshold: number | null;
       highestValueUsd: number | null;
       lastRebalanceAt: number;
+      paperExitedAt: number | null;
+    }>,
+    unknown
+  >;
+  readonly getPaperExitedPositions: () => Effect.Effect<
+    ReadonlyArray<{
+      poolAddress: string;
+      positionPubKey: string | null;
+      depositedUsd: number;
+      currentValueUsd: number;
+      tokenXSymbol: string;
+      tokenYSymbol: string;
+      activeBinId: number;
+      lowerBinId: number;
+      upperBinId: number;
+      timestamp: number;
+      outOfRangeSince: number | null;
+      oorCycleCount: number;
+      lastFeeClaimAt: number;
+      trailingStopThreshold: number | null;
+      highestValueUsd: number | null;
+      lastRebalanceAt: number;
+      paperExitedAt: number | null;
     }>,
     unknown
   >;
   readonly deletePosition: (poolAddress: string) => Effect.Effect<void, unknown>;
+  readonly markPaperExited: (poolAddress: string) => Effect.Effect<void, unknown>;
   readonly updatePositionValue: (
     poolAddress: string,
     currentValueUsd: number,
