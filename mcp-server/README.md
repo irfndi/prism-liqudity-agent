@@ -147,11 +147,20 @@ No data is sent to external services. The server is a stdio-only process that on
 
 ```bash
 cd mcp-server
-npm install
-npm run dev      # tsc --watch
-npm run build    # tsc
-npm test         # bun test test/
+npm install                    # installs deps + builds better-sqlite3 native binding
+npm run dev                    # tsc --watch
+npm run build                  # tsc
+npm test                       # node --import tsx --test test/*.test.ts
 ```
+
+### Build requirement: better-sqlite3 native binding
+
+`better-sqlite3` is a native module that needs to be compiled for the target Node.js version. The `npm install` step should automatically download a prebuilt binary, but on very new Node.js versions (e.g., v26) or systems without build tools, the build may fall back to compiling from source, which requires:
+- macOS: Xcode Command Line Tools (`xcode-select --install`)
+- Linux: Python 3, make, g++
+- Windows: windows-build-tools
+
+If `npm test` fails with `node-gyp` errors, run `npm rebuild better-sqlite3` to force a rebuild, or use a Node.js version with available prebuilds (v18-v22 are well-supported).
 
 ## Future work (not in this package)
 

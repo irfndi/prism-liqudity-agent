@@ -1,4 +1,4 @@
-import { Database } from "better-sqlite3";
+import Database from "better-sqlite3";
 import { existsSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -6,12 +6,11 @@ import { runPrism } from "./exec.js";
 
 const DEFAULT_DB_PATH = "./prism.db";
 
-function openDb(): Database | null {
+function openDb(): InstanceType<typeof Database> | null {
   const dbPath = process.env.SQLITE_DB_PATH ?? DEFAULT_DB_PATH;
   if (!existsSync(dbPath)) {
     return null;
   }
-  const Database = require("better-sqlite3");
   return new Database(dbPath, { readonly: true, fileMustExist: true });
 }
 
