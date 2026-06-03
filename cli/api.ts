@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { getOrCreateInstallId } from "./install-id.js";
+import { getCurrentVersion } from "../engine/version.js";
 
 const DEFAULT_API_URL = "https://prism-api.irfndi.workers.dev";
 
@@ -109,4 +111,25 @@ export function writeCredentials(creds: {
     mode: 0o600,
   });
   fs.chmodSync(CREDENTIALS_FILE, 0o600);
+}
+
+export function pingInstall(
+  event: "install" | "setup" | "dev_start" | "register",
+  options: { userId?: string } = {},
+): void {
+  void (async () => {
+    try {
+      const body: Record<string, string> = {
+        installId: getOrCreateInstallId(),
+        event,
+        version: getCurrentVersion(),
+        channel: process.env.UPDATE_CHANNEL ?? "stable",
+        platform: process.platform,
+      };
+      if (options.userId) body.userId = options.userId;
+      await prismApiPost("/v1/installs/ping", body);
+    } catch {
+      return;
+    }
+  })();
 }
