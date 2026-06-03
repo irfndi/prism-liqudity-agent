@@ -1,23 +1,38 @@
 import { Command } from "commander";
-import fs from "fs";
-import path from "path";
-import os from "os";
+import { prismApiGet, readCredentials } from "./api.js";
 
-const CREDENTIALS_FILE = path.join(os.homedir(), ".config", "prism", "credentials.json");
+interface WhoamiResult {
+  id: string;
+  tier: string;
+  telegram_id: string | null;
+  created_at: string;
+}
 
 export const whoamiCommand = new Command("whoami")
   .description("Show current user info")
-  .action(() => {
-    if (!fs.existsSync(CREDENTIALS_FILE)) {
+  .action(async () => {
+    const creds = readCredentials();
+    if (!creds) {
       console.error("Error: Not registered. Run 'prism register' first.");
       process.exit(1);
     }
 
-    const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf-8"));
+    const result = await prismApiGet<WhoamiResult>("/v1/whoami", {
+      apiKey: creds.apiKey,
+    });
 
-    console.log("User ID:", credentials.userId);
-    console.log("API Key:", `${credentials.apiKey.slice(0, 12)}...`);
-    console.log("Created:", credentials.createdAt);
-    console.log("Tier: free (not yet implemented)");
-    console.log("Telegram: not linked");
+    if (!result.ok || !result.data) {
+      console.error("Error: Failed to fetch user info");
+      if (result.error) console.error(`  ${result.error}`);
+      console.error("Your stored credentials may be invalid. Run 'prism login <key>' to refresh.");
+      process.exit(1);
+    }
+
+    const { id, tier, telegram_id: telegramId, created_at: createdAt } = result.data;
+
+    console.log("User ID:", id);
+    console.log("Tier:", tier);
+    console.log("Telegram:", telegramId ? `linked (${telegramId})` : "not linked");
+    console.log("Created:", createdAt);
+    console.log("API Key:", `${creds.apiKey.slice(0, 12)}...`);
   });

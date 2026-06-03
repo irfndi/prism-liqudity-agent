@@ -1,6 +1,5 @@
 import { Effect, Layer, Context } from "effect";
 import { Hono } from "hono";
-import { handle } from "hono/cloudflare-workers";
 
 // Environment bindings interface
 interface Env {
@@ -15,10 +14,7 @@ interface Env {
 }
 
 // Services
-class DbService extends Context.Tag("DbService")<
-  DbService,
-  { readonly db: D1Database }
->() {}
+class DbService extends Context.Tag("DbService")<DbService, { readonly db: D1Database }>() {}
 
 class CacheService extends Context.Tag("CacheService")<
   CacheService,
@@ -26,17 +22,17 @@ class CacheService extends Context.Tag("CacheService")<
 >() {}
 
 // Service implementations
-const DbLive = (db: D1Database) =>
-  Layer.succeed(DbService, { db });
+const DbLive = (db: D1Database) => Layer.succeed(DbService, { db });
 
-const CacheLive = (cache: KVNamespace) =>
-  Layer.succeed(CacheService, { cache });
+const CacheLive = (cache: KVNamespace) => Layer.succeed(CacheService, { cache });
 
 // Helper to generate IDs
 const generateId = () => {
   const randomBytes = new Uint8Array(8);
   crypto.getRandomValues(randomBytes);
-  return `${Date.now()}-${Array.from(randomBytes).map(b => b.toString(36).padStart(2, '0')).join('')}`;
+  return `${Date.now()}-${Array.from(randomBytes)
+    .map((b) => b.toString(36).padStart(2, "0"))
+    .join("")}`;
 };
 
 // Helper to hash API keys
@@ -56,10 +52,7 @@ const registerHandler = (db: D1Database) =>
     const keyHash = yield* Effect.promise(() => hashKey(apiKey));
 
     yield* Effect.promise(() =>
-      db
-        .prepare("INSERT INTO users (id, tier) VALUES (?, ?)")
-        .bind(userId, "free")
-        .run(),
+      db.prepare("INSERT INTO users (id, tier) VALUES (?, ?)").bind(userId, "free").run(),
     );
 
     yield* Effect.promise(() =>
@@ -126,14 +119,16 @@ const linkTelegramStartHandler = (db: D1Database, userId: string) =>
   Effect.gen(function* () {
     const randomBytes = new Uint8Array(4);
     crypto.getRandomValues(randomBytes);
-    const code = `LINK-${Array.from(randomBytes).map(b => b.toString(36).padStart(2, '0')).join('').toUpperCase().slice(0, 6)}`;
+    const code = `LINK-${Array.from(randomBytes)
+      .map((b) => b.toString(36).padStart(2, "0"))
+      .join("")
+      .toUpperCase()
+      .slice(0, 6)}`;
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
     yield* Effect.promise(() =>
       db
-        .prepare(
-          "INSERT INTO telegram_link_codes (code, user_id, expires_at) VALUES (?, ?, ?)",
-        )
+        .prepare("INSERT INTO telegram_link_codes (code, user_id, expires_at) VALUES (?, ?, ?)")
         .bind(code, userId, expiresAt)
         .run(),
     );
@@ -142,8 +137,61 @@ const linkTelegramStartHandler = (db: D1Database, userId: string) =>
   });
 
 // Health check
-const healthHandler = () =>
-  Effect.succeed({ status: "ok", timestamp: new Date().toISOString() });
+const healthHandler = () => Effect.succeed({ status: "ok", timestamp: new Date().toISOString() });
+
+// Register via Telegram (called by the Telegram bot)
+const registerTelegramHandler = (db: D1Database, telegramId: string, firstName: string) =>
+  Effect.gen(function* () {
+    if (!/^\d+$/.test(telegramId)) {
+      return yield* Effect.fail(new Error("Invalid telegram_id format. Must be numeric."));
+    }
+
+    const existing = yield* Effect.promise(() =>
+      db
+        .prepare("SELECT id, tier, telegram_id FROM users WHERE telegram_id = ?")
+        .bind(telegramId)
+        .first(),
+    );
+
+    if (existing) {
+      return yield* Effect.fail(new Error("Telegram account already registered"));
+    }
+
+    const userId = generateId();
+    const apiKey = `sk-prism-${generateId()}`;
+    const keyHash = yield* Effect.promise(() => hashKey(apiKey));
+
+    yield* Effect.promise(() =>
+      db
+        .prepare("INSERT INTO users (id, tier, telegram_id) VALUES (?, ?, ?)")
+        .bind(userId, "free", telegramId)
+        .run(),
+    );
+
+    yield* Effect.promise(() =>
+      db
+        .prepare("INSERT INTO api_keys (key_hash, user_id) VALUES (?, ?)")
+        .bind(keyHash, userId)
+        .run(),
+    );
+
+    return { user_id: userId, api_key: apiKey, first_name: firstName };
+  });
+
+// Agent status (called by the Telegram bot). Placeholder until the live agent
+// runtime exposes telemetry; real numbers can replace this later.
+const agentStatusHandler = (db: D1Database, telegramId: string) =>
+  Effect.gen(function* () {
+    const result = yield* Effect.promise(() =>
+      db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(telegramId).first(),
+    );
+
+    if (!result) {
+      return yield* Effect.fail(new Error("User not found"));
+    }
+
+    return { status: "not_running", positions: 0, pnl: 0 };
+  });
 
 // Main app
 const app = new Hono<{ Bindings: Env }>();
@@ -232,9 +280,7 @@ app.get("/v1/whoami", async (c) => {
 
   try {
     const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
-    const userResult = await Effect.runPromise(
-      whoamiHandler(DB, loginResult.id as string),
-    );
+    const userResult = await Effect.runPromise(whoamiHandler(DB, loginResult.id as string));
     return c.json(userResult);
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -251,9 +297,7 @@ app.post("/v1/link-telegram/start", async (c) => {
 
   try {
     const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
-    const result = await Effect.runPromise(
-      linkTelegramStartHandler(DB, loginResult.id as string),
-    );
+    const result = await Effect.runPromise(linkTelegramStartHandler(DB, loginResult.id as string));
     return c.json(result);
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -310,9 +354,7 @@ app.post("/v1/link-telegram/confirm", async (c) => {
     }
 
     // Get user_id from the code
-    const codeResult = await DB.prepare(
-      `SELECT user_id FROM telegram_link_codes WHERE code = ?`,
-    )
+    const codeResult = await DB.prepare(`SELECT user_id FROM telegram_link_codes WHERE code = ?`)
       .bind(body.code)
       .first();
 
@@ -324,6 +366,86 @@ app.post("/v1/link-telegram/confirm", async (c) => {
     return c.json({ success: true, user_id: codeResult?.user_id });
   } catch {
     return c.json({ error: "Linking failed" }, 500);
+  }
+});
+
+app.post("/v1/whoami-telegram", async (c) => {
+  const { DB } = c.env;
+  const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
+
+  if (!body.telegram_id) {
+    return c.json({ error: "telegram_id required" }, 400);
+  }
+  if (!/^\d+$/.test(body.telegram_id)) {
+    return c.json({ error: "Invalid telegram_id format. Must be numeric." }, 400);
+  }
+
+  const result = await c.env.DB.prepare(
+    "SELECT id, tier, telegram_id, created_at FROM users WHERE telegram_id = ?",
+  )
+    .bind(body.telegram_id)
+    .first();
+
+  if (!result) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  return c.json({
+    user_id: result.id,
+    tier: result.tier,
+    telegram_id: result.telegram_id,
+    created_at: result.created_at,
+  });
+});
+
+app.post("/v1/register-telegram", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const body = await c.req.json<{ telegram_id?: string; first_name?: string }>().catch(() => ({}));
+
+  if (!body.telegram_id) {
+    return c.json({ error: "telegram_id required" }, 400);
+  }
+
+  // Same 5/hour/IP rate limit as /v1/register.
+  const rateKey = `rate_limit:register_telegram:${clientIp}`;
+  const rateData = await CACHE.get(rateKey);
+  const count = rateData ? parseInt(rateData, 10) : 0;
+  if (count >= 5) {
+    return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+  }
+
+  try {
+    const result = await Effect.runPromise(
+      registerTelegramHandler(DB, body.telegram_id, body.first_name ?? ""),
+    );
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+    return c.json({
+      user_id: result.user_id,
+      api_key: result.api_key,
+      tier: "free",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Registration failed";
+    const status = message.includes("already registered") ? 409 : 400;
+    return c.json({ error: message }, status);
+  }
+});
+
+app.post("/v1/agent-status", async (c) => {
+  const { DB } = c.env;
+  const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
+
+  if (!body.telegram_id) {
+    return c.json({ error: "telegram_id required" }, 400);
+  }
+
+  try {
+    const result = await Effect.runPromise(agentStatusHandler(DB, body.telegram_id));
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Status unavailable";
+    const status = message.includes("not found") ? 404 : 500;
+    return c.json({ error: message }, status);
   }
 });
 
@@ -339,22 +461,19 @@ app.post("/v1/issue", async (c) => {
 
   try {
     // Create GitHub issue
-    const response = await fetch(
-      `https://api.github.com/repos/${repo}/issues`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GITHUB_TOKEN}`,
-          "Content-Type": "application/json",
-          Accept: "application/vnd.github.v3+json",
-        },
-        body: JSON.stringify({
-          title: body.title,
-          body: body.body || "",
-          labels: ["user-reported"],
-        }),
+    const response = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
       },
-    );
+      body: JSON.stringify({
+        title: body.title,
+        body: body.body || "",
+        labels: ["user-reported"],
+      }),
+    });
 
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status}`);
@@ -370,6 +489,6 @@ app.post("/v1/issue", async (c) => {
 // Export handler for Cloudflare Workers
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    return handle(app)(request, env, ctx);
+    return app.fetch(request, env, ctx);
   },
 };

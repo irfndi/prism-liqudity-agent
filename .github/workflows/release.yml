@@ -1,0 +1,185 @@
+name: Release to R2
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Security: keep the secret out of job-level env so it is only exposed
+# to steps that need it. The boolean flag gates the `if:` checks below.
+env:
+  HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set VERSION
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run lint
+        run: bun run lint
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build tarball
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_NAME="prism-v${VERSION}.tar.gz"
+          echo "Building ${TARBALL_NAME}"
+          # Exclude the archive being written and the .sha256/.asc sidecars
+          # to avoid tar's "file changed as we read it" error.
+          tar -czf "${TARBALL_NAME}" \
+            --exclude="${TARBALL_NAME}" \
+            --exclude="${TARBALL_NAME}.sha256" \
+            --exclude="${TARBALL_NAME}.asc" \
+            --exclude=node_modules \
+            --exclude=dist \
+            --exclude=.git \
+            --exclude=*.db \
+            --exclude=*.db-journal \
+            --exclude=*.db-wal \
+            --exclude=*.db-shm \
+            --exclude=logs \
+            --exclude=.env \
+            --exclude=.env.* \
+            --exclude=bench/tmp-audit \
+            --exclude=.wrangler \
+            --exclude=cloudflare/.wrangler \
+            --exclude=.omo \
+            --exclude=.rtk \
+            --exclude=.opencode \
+            .
+          ls -lh "${TARBALL_NAME}"
+
+      - name: Generate SHA-256 checksum
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_NAME="prism-v${VERSION}.tar.gz"
+          sha256sum "${TARBALL_NAME}" > "${TARBALL_NAME}.sha256"
+          cat "${TARBALL_NAME}.sha256"
+
+      - name: Sign tarball (GPG, optional)
+        if: env.HAS_GPG_KEY == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_NAME="prism-v${VERSION}.tar.gz"
+          echo "$GPG_PRIVATE_KEY" | gpg --import
+          gpg --batch --yes --armor --detach-sign "${TARBALL_NAME}"
+
+      - name: Upload tarball to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npx wrangler r2 object put "prism-backups/releases/v${VERSION}/prism-v${VERSION}.tar.gz" --file "prism-v${VERSION}.tar.gz"
+
+      - name: Upload SHA-256 to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npx wrangler r2 object put "prism-backups/releases/v${VERSION}/prism-v${VERSION}.tar.gz.sha256" --file "prism-v${VERSION}.tar.gz.sha256"
+
+      - name: Upload GPG signature to R2
+        if: env.HAS_GPG_KEY == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npx wrangler r2 object put "prism-backups/releases/v${VERSION}/prism-v${VERSION}.tar.gz.asc" --file "prism-v${VERSION}.tar.gz.asc"
+
+      - name: Update latest.json manifest (stable channel only)
+        if: "!contains(github.ref, '-beta') && !contains(github.ref, '-dev')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_URL="https://r2.prism-agent.com/releases/v${VERSION}/prism-v${VERSION}.tar.gz"
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "channel": "stable",
+            "tarball_url": "${TARBALL_URL}",
+            "sha256_url": "${TARBALL_URL}.sha256",
+            "signature_url": "${TARBALL_URL}.asc",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "min_cli_version": "1.0.0"
+          }
+          EOF
+          cat latest.json
+          npx wrangler r2 object put "prism-backups/releases/latest.json" --file latest.json
+
+      - name: Update beta channel manifest
+        if: contains(github.ref, '-beta')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_URL="https://r2.prism-agent.com/releases/v${VERSION}/prism-v${VERSION}.tar.gz"
+          cat > beta.json << EOF
+          {
+            "version": "${VERSION}",
+            "channel": "beta",
+            "tarball_url": "${TARBALL_URL}",
+            "sha256_url": "${TARBALL_URL}.sha256",
+            "signature_url": "${TARBALL_URL}.asc",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "min_cli_version": "1.0.0"
+          }
+          EOF
+          # Path must match R2_MANIFEST_PATHS.beta in engine/update-utils.ts
+          npx wrangler r2 object put "prism-backups/releases/channel/beta.json" --file beta.json
+
+      - name: Update dev channel manifest
+        if: contains(github.ref, '-dev')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          TARBALL_URL="https://r2.prism-agent.com/releases/v${VERSION}/prism-v${VERSION}.tar.gz"
+          cat > dev.json << EOF
+          {
+            "version": "${VERSION}",
+            "channel": "dev",
+            "tarball_url": "${TARBALL_URL}",
+            "sha256_url": "${TARBALL_URL}.sha256",
+            "signature_url": "${TARBALL_URL}.asc",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "min_cli_version": "1.0.0"
+          }
+          EOF
+          # Path must match R2_MANIFEST_PATHS.dev in engine/update-utils.ts
+          npx wrangler r2 object put "prism-backups/releases/channel/dev.json" --file dev.json
+
+      - name: Create GitHub Release (optional, for visibility)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            prism-v${{ env.VERSION }}.tar.gz
+            prism-v${{ env.VERSION }}.tar.gz.sha256
