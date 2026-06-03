@@ -201,6 +201,36 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
       `);
     },
   },
+  {
+    version: 5,
+    name: "add_agent_feedback",
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_feedback (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT NOT NULL,
+          category TEXT NOT NULL,
+          severity TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          details TEXT,
+          related_files TEXT,
+          context_json TEXT,
+          github_issue_number INTEGER,
+          github_issue_url TEXT,
+          reported_at INTEGER NOT NULL,
+          hash TEXT NOT NULL
+        );
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_hash
+          ON agent_feedback(hash);
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_agent_time
+          ON agent_feedback(agent_id, reported_at);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database) {
