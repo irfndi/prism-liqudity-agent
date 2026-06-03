@@ -18,7 +18,7 @@ process.on("uncaughtException", (err) => {
   errorReporter.report(ensureError(err), { severity: "critical" });
   console.error("Uncaught exception:", err);
   setImmediate(() => {
-    errorReporter.flushAsync().finally(() => {
+    errorReporter.flushAsync(2_000).finally(() => {
       process.exit(1);
     });
   });
@@ -38,7 +38,7 @@ Effect.runPromise(
         errorReporter.report(ensureError(err), { severity: "critical" });
         console.error("Fatal error:", err);
         setImmediate(() => {
-          errorReporter.flushAsync().finally(() => {
+          errorReporter.flushAsync(2_000).finally(() => {
             process.exit(1);
           });
         });

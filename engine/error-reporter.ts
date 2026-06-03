@@ -4,7 +4,8 @@
  * - Sanitizes stack traces and messages (replaces base58-like keys, private keys, passwords)
  * - Buffers reports in memory and flushes in batches (5 reports or 60 seconds)
  * - Sends to a configurable endpoint via fetch (PRISM_ERROR_ENDPOINT env var, default unset = no-op)
- * - If the endpoint fetch fails, logs to console and drops the batch
+ * - If the endpoint fetch fails, the batch is re-queued at the front of the pending buffer
+ *   (oldest reports beyond MAX_PENDING_BUFFER are dropped to bound memory)
  * - Classifies errors by string match
  * - If PRISM_ERROR_REPORTING env var is "false", the reporter is a no-op (opt-out)
  * - For testability: flushAsync(), getPending(), and createErrorReporter(config) factory
@@ -213,7 +214,7 @@ export class ErrorReporter {
     console.error(`[ErrorReporter] ${category}: ${sanitizedMessage}`);
   }
 
-  async flush(): Promise<void> {
+  async flush(timeoutMs = 10_000): Promise<void> {
     if (!this.enabled || !this.endpoint || this.pending.length === 0) {
       return;
     }
@@ -225,45 +226,60 @@ export class ErrorReporter {
       reports: batch,
     };
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(this.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       if (!response.ok) {
-        this.pending.unshift(...batch);
+        this.requeueBatch(batch);
         console.error(
           `[ErrorReporter] Failed to send batch: ${response.status} ${response.statusText} (${batch.length} reports re-queued)`,
         );
       }
     } catch (err) {
-      this.pending.unshift(...batch);
+      this.requeueBatch(batch);
       console.error("[ErrorReporter] Failed to send error report batch, re-queued:", err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private requeueBatch(batch: ReadonlyArray<ErrorReport>): void {
+    this.pending.unshift(...batch);
+    const overflow = this.pending.length - MAX_PENDING_BUFFER;
+    if (overflow > 0) {
+      this.pending.splice(MAX_PENDING_BUFFER, overflow);
     }
   }
 
   /**
    * Trigger an async flush and return a Promise that resolves when it
    * completes. Useful for shutdown paths and tests that need to assert
-   * the network call happened.
+   * the network call happened. Aborts the fetch after `timeoutMs` so a
+   * hung endpoint cannot block process exit.
    */
-  flushAsync(): Promise<void> {
+  flushAsync(timeoutMs = 10_000): Promise<void> {
     if (!this.enabled) {
       return Promise.resolve();
     }
-    return this.flush();
+    return this.flush(timeoutMs);
   }
 
   getPending(): ReadonlyArray<ErrorReport> {
     return [...this.pending];
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     if (this.timerId !== null) {
       clearInterval(this.timerId);
       this.timerId = null;
     }
+    await this.flushAsync(2_000);
   }
 }
 
