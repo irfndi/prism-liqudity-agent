@@ -26,6 +26,10 @@ prism setup --non-interactive --helius-key=$KEY    # configures trading agent
 prism dev                                         # start paper trading
 ```
 
+> **3-Layer Architecture:** Prism has 3 layers — CLI (required, runs locally),
+> API (optional cloud service), and Telegram (optional chat interface).
+> See [`docs/install.md`](docs/install.md) for the breakdown and quickstart options.
+
 ## Stack
 
 - **Runtime**: Bun 1.2+ (dev, tests, build). Node 20+ for Docker.
@@ -43,15 +47,17 @@ prism dev                                         # start paper trading
 ## Repo layout
 
 ```
+
 prism-liquidity-agent/
-├── engine/             Core agent: strategy, adapters, risk, DB, memory, scan loop (flat dir, ~23 files)
-├── cloudflare/         SEPARATE SUBPROJECT. Own package.json, vitest, wrangler config. API + Telegram bot workers
-├── cli/                User-facing CLI (commander). 13 commands: register, login, whoami, wallet, telegram, etc.
-├── ops/                Operational scripts: setup.ts (.env wizard), backtest.ts
-├── bench/              Vitest tests for engine (pure logic only)
-├── docs/               Markdown docs (install, CLI, cron, agent-harness)
-├── types/              Type declarations (bs58)
-└── .github/workflows/  ci.yml (engine) + deploy-cloudflare.yml (workers)
+├── engine/ Core agent: strategy, adapters, risk, DB, memory, scan loop (flat dir, ~23 files)
+├── cloudflare/ SEPARATE SUBPROJECT. Own package.json, vitest, wrangler config. API + Telegram bot workers
+├── cli/ User-facing CLI (commander). 13 commands: register, login, whoami, wallet, telegram, etc.
+├── ops/ Operational scripts: setup.ts (.env wizard), backtest.ts
+├── bench/ Vitest tests for engine (pure logic only)
+├── docs/ Markdown docs (install, CLI, cron, agent-harness)
+├── types/ Type declarations (bs58)
+└── .github/workflows/ ci.yml (engine) + deploy-cloudflare.yml (workers)
+
 ```
 
 **There is no `probes/`, `tools/`, `adapters/`, `risk/`, or `memory/` directory.** `ARCHITECTURE.md`'s component map is fictional. Every engine file is flat in `engine/`.

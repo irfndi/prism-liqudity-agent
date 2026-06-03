@@ -157,6 +157,23 @@ export const updateCommand = new Command("update")
       console.log("Installing dependencies...");
       execSync("bun install", { cwd: extractedDir, stdio: "inherit" });
 
+      // === Pre-apply smoke tests ===
+      console.log("Running TypeScript smoke test...");
+      try {
+        execSync("bunx tsc --noEmit", { cwd: extractedDir, stdio: "inherit" });
+      } catch {
+        throw new UpdateAbort(`TypeScript smoke test failed — refusing to install ${latest}`);
+      }
+      console.log("✓ TypeScript smoke test passed");
+
+      console.log("Running test suite smoke test...");
+      try {
+        execSync("bunx vitest run --reporter=basic", { cwd: extractedDir, stdio: "inherit" });
+      } catch {
+        throw new UpdateAbort(`Test suite smoke test failed — refusing to install ${latest}`);
+      }
+      console.log("✓ Test suite smoke test passed");
+
       // Atomic swap: stage new files alongside the install root, then rename.
       // A direct copy into the live install can leave it half-updated on failure.
       const installRoot = resolveInstallRoot();
@@ -187,6 +204,31 @@ export const updateCommand = new Command("update")
         if (existsSync(currentBackup)) {
           execSync(`mv "${currentBackup}" "${backupRoot}"`, { stdio: "inherit" });
         }
+
+        // Post-apply health check
+        console.log("Running post-apply health check...");
+        try {
+          execSync("bunx tsc --noEmit", { cwd: installRoot, stdio: "inherit", timeout: 30_000 });
+        } catch (healthErr) {
+          console.error("Post-apply health check failed — rolling back");
+          try {
+            rmSync(installRoot, { recursive: true, force: true });
+            if (existsSync(backupRoot)) {
+              execSync(`mv "${backupRoot}" "${installRoot}"`, { stdio: "inherit" });
+            }
+          } catch (rollbackErr) {
+            throw new UpdateAbort(
+              "Update failed: health check did not pass AND rollback failed. " +
+                `Your install at ${installRoot} may be in an inconsistent state. ` +
+                `Previous version is at ${backupRoot}.`,
+            );
+          }
+          throw new UpdateAbort(
+            `Post-apply health check failed — rolled back to previous version. ` +
+              `Error: ${healthErr instanceof Error ? healthErr.message : String(healthErr)}`,
+          );
+        }
+        console.log("✓ Post-apply health check passed");
       } catch (swapErr) {
         if (existsSync(stagedRoot)) {
           try {

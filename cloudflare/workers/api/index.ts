@@ -2,7 +2,7 @@ import { Effect, Layer, Context } from "effect";
 import { Hono } from "hono";
 
 // Environment bindings interface
-interface Env {
+export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
   BACKUPS: R2Bucket;
@@ -11,7 +11,19 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GITHUB_TOKEN: string;
   GITHUB_REPO: string;
+  ADMIN_API_KEY?: string;
 }
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+const MAX_ERROR_MESSAGE_LENGTH = 4096;
 
 // Services
 class DbService extends Context.Tag("DbService")<DbService, { readonly db: D1Database }>() {}
@@ -194,14 +206,14 @@ const agentStatusHandler = (db: D1Database, telegramId: string) =>
   });
 
 // Main app
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { apiKey: string } }>();
 
 // Middleware to extract and validate API key
 app.use("/v1/*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
   if (authHeader) {
     const match = authHeader.match(/^Bearer\s+(.+)$/);
-    if (match) {
+    if (match && match[1]) {
       c.set("apiKey", match[1]);
     }
   }
@@ -217,7 +229,7 @@ app.get("/health", async (c) => {
 app.post("/v1/register", async (c) => {
   const { DB, CACHE } = c.env;
   const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
-  const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
+  const body = (await c.req.json().catch(() => ({}))) as { telegram_id?: string };
 
   try {
     // Rate limiting: max 5 registrations per IP per hour
@@ -280,7 +292,9 @@ app.get("/v1/whoami", async (c) => {
 
   try {
     const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
-    const userResult = await Effect.runPromise(whoamiHandler(DB, loginResult.id as string));
+    const userResult = await Effect.runPromise(
+      whoamiHandler(DB, (loginResult as { id: string }).id),
+    );
     return c.json(userResult);
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -297,7 +311,9 @@ app.post("/v1/link-telegram/start", async (c) => {
 
   try {
     const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
-    const result = await Effect.runPromise(linkTelegramStartHandler(DB, loginResult.id as string));
+    const result = await Effect.runPromise(
+      linkTelegramStartHandler(DB, (loginResult as { id: string }).id),
+    );
     return c.json(result);
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -306,7 +322,7 @@ app.post("/v1/link-telegram/start", async (c) => {
 
 app.post("/v1/link-telegram/confirm", async (c) => {
   const { DB } = c.env;
-  const body = await c.req.json<{ code: string; telegram_id: string }>();
+  const body = (await c.req.json().catch(() => ({}))) as { code: string; telegram_id: string };
 
   if (!body.code || !body.telegram_id) {
     return c.json({ error: "Code and telegram_id required" }, 400);
@@ -371,7 +387,7 @@ app.post("/v1/link-telegram/confirm", async (c) => {
 
 app.post("/v1/whoami-telegram", async (c) => {
   const { DB } = c.env;
-  const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
+  const body = (await c.req.json().catch(() => ({}))) as { telegram_id?: string };
 
   if (!body.telegram_id) {
     return c.json({ error: "telegram_id required" }, 400);
@@ -400,7 +416,10 @@ app.post("/v1/whoami-telegram", async (c) => {
 app.post("/v1/register-telegram", async (c) => {
   const { DB, CACHE } = c.env;
   const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
-  const body = await c.req.json<{ telegram_id?: string; first_name?: string }>().catch(() => ({}));
+  const body = (await c.req.json().catch(() => ({}))) as {
+    telegram_id?: string;
+    first_name?: string;
+  };
 
   if (!body.telegram_id) {
     return c.json({ error: "telegram_id required" }, 400);
@@ -433,7 +452,7 @@ app.post("/v1/register-telegram", async (c) => {
 
 app.post("/v1/agent-status", async (c) => {
   const { DB } = c.env;
-  const body = await c.req.json<{ telegram_id?: string }>().catch(() => ({}));
+  const body = (await c.req.json().catch(() => ({}))) as { telegram_id?: string };
 
   if (!body.telegram_id) {
     return c.json({ error: "telegram_id required" }, 400);
@@ -451,7 +470,7 @@ app.post("/v1/agent-status", async (c) => {
 
 app.post("/v1/issue", async (c) => {
   const { GITHUB_TOKEN, GITHUB_REPO } = c.env;
-  const body = await c.req.json<{ title: string; body: string }>();
+  const body = (await c.req.json().catch(() => ({}))) as { title: string; body: string };
 
   if (!body.title) {
     return c.json({ error: "Title required" }, 400);
@@ -479,10 +498,229 @@ app.post("/v1/issue", async (c) => {
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const issue = await response.json();
+    const issue = (await response.json()) as { number?: number; html_url?: string };
     return c.json({ issue_number: issue.number, url: issue.html_url });
   } catch {
     return c.json({ error: "Failed to create issue" }, 500);
+  }
+});
+
+// ── Error Reporting ──────────────────────────────────────────────────────────
+// Privacy-first error telemetry (opt-in, no auth required for ingestion)
+
+app.post("/v1/errors/report", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    id?: string;
+    agentId?: string;
+    errorType?: string;
+    message?: string;
+    stackTrace?: string;
+    prismVersion?: string;
+    platform?: string;
+    severity?: string;
+    isRecoverable?: number;
+  };
+
+  // Validate required fields
+  if (!body.id || !body.agentId || !body.errorType || !body.message || !body.prismVersion) {
+    return c.json(
+      { error: "Missing required fields: id, agentId, errorType, message, prismVersion" },
+      400,
+    );
+  }
+  if (body.message.length > MAX_ERROR_MESSAGE_LENGTH) {
+    return c.json({ error: `message exceeds ${MAX_ERROR_MESSAGE_LENGTH} characters` }, 400);
+  }
+
+  // Rate limit: 100 reports per IP per hour
+  if (CACHE) {
+    const rateKey = `rate_limit:error_report:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+    if (count >= 100) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+  }
+
+  try {
+    const severity = body.severity ?? "error";
+    const isRecoverable = body.isRecoverable ? 1 : 0;
+
+    await DB.prepare(
+      `INSERT INTO error_logs (id, agent_id, error_type, message, stack_trace, prism_version, platform, severity, is_recoverable)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        body.id,
+        body.agentId,
+        body.errorType,
+        body.message,
+        body.stackTrace ?? null,
+        body.prismVersion,
+        body.platform ?? null,
+        severity,
+        isRecoverable,
+      )
+      .run();
+
+    return c.json({ id: body.id });
+  } catch (err) {
+    // Duplicate id is expected (agent retries) — return 200 for idempotency
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("UNIQUE constraint")) {
+      return c.json({ id: body.id });
+    }
+    return c.json({ error: "Failed to store error report" }, 500);
+  }
+});
+
+app.post("/v1/errors/batch", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    reports?: Array<{
+      id?: string;
+      agentId?: string;
+      errorType?: string;
+      message?: string;
+      stackTrace?: string;
+      prismVersion?: string;
+      platform?: string;
+      severity?: string;
+      isRecoverable?: number;
+    }>;
+  };
+
+  const reports = body.reports ?? [];
+
+  if (reports.length === 0) {
+    return c.json({ error: "No reports provided" }, 400);
+  }
+
+  if (reports.length > 50) {
+    return c.json({ error: "Batch size exceeds maximum of 50" }, 400);
+  }
+
+  // Rate limit: 50 batches per IP per hour
+  if (CACHE) {
+    const rateKey = `rate_limit:error_batch:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+    if (count >= 50) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+  }
+
+  // Validate all reports
+  const validReports: Array<{
+    id: string;
+    agentId: string;
+    errorType: string;
+    message: string;
+    prismVersion: string;
+    stackTrace: string | null;
+    platform: string | null;
+    severity: string;
+    isRecoverable: number;
+  }> = [];
+
+  for (const r of reports) {
+    if (!r.id || !r.agentId || !r.errorType || !r.message || !r.prismVersion) {
+      return c.json(
+        {
+          error: "Each report requires id, agentId, errorType, message, prismVersion",
+          reportId: r.id ?? "(missing id)",
+        },
+        400,
+      );
+    }
+    if (r.message.length > MAX_ERROR_MESSAGE_LENGTH) {
+      return c.json(
+        {
+          error: `message exceeds ${MAX_ERROR_MESSAGE_LENGTH} characters`,
+          reportId: r.id,
+        },
+        400,
+      );
+    }
+    validReports.push({
+      id: r.id,
+      agentId: r.agentId,
+      errorType: r.errorType,
+      message: r.message,
+      prismVersion: r.prismVersion,
+      stackTrace: r.stackTrace ?? null,
+      platform: r.platform ?? null,
+      severity: r.severity ?? "error",
+      isRecoverable: r.isRecoverable ? 1 : 0,
+    });
+  }
+
+  try {
+    const stmt = DB.prepare(
+      `INSERT OR IGNORE INTO error_logs (id, agent_id, error_type, message, stack_trace, prism_version, platform, severity, is_recoverable)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    const batchStatements = validReports.map((r) =>
+      stmt.bind(
+        r.id,
+        r.agentId,
+        r.errorType,
+        r.message,
+        r.stackTrace,
+        r.prismVersion,
+        r.platform,
+        r.severity,
+        r.isRecoverable,
+      ),
+    );
+
+    const results = await DB.batch(batchStatements);
+    const inserted = results.reduce(
+      (sum, r) => sum + (typeof r.meta.changes === "number" ? r.meta.changes : 0),
+      0,
+    );
+    const duplicates = validReports.length - inserted;
+
+    return c.json({ inserted, duplicates });
+  } catch {
+    return c.json({ error: "Failed to store error reports" }, 500);
+  }
+});
+
+app.get("/v1/errors/stats", async (c) => {
+  const { DB } = c.env;
+
+  // Require admin bearer token
+  const authHeader = c.req.header("Authorization");
+  const match = authHeader?.match(/^Bearer\s+(.+)$/);
+  const token = match?.[1];
+
+  if (!token || !c.env.ADMIN_API_KEY || !constantTimeEqual(token, c.env.ADMIN_API_KEY)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const result = await DB.prepare(
+      `SELECT error_type, COUNT(*) as count
+       FROM error_logs
+       WHERE created_at >= datetime('now', '-1 day')
+       GROUP BY error_type
+       ORDER BY count DESC`,
+    ).all();
+
+    const rows = result.results ?? [];
+
+    return c.json({ stats: rows });
+  } catch {
+    return c.json({ error: "Failed to fetch stats" }, 500);
   }
 });
 

@@ -21,25 +21,69 @@ Agents do **not** need to deploy Cloudflare workers. They are already running:
 | Telegram Bot | `https://prism-telegram-bot.irfndi.workers.dev` |
 | Bot username | `@prism_agent_bot`                              |
 
-## Quick Start for Agents (4 steps)
+## Quick Start for Agents (3-layer approach)
+
+Prism has 3 layers. Only the CLI is required. The API (cloud) and Telegram are
+optional. See [`install.md`](install.md) for the full architecture explanation.
+
+### Layer 1: CLI (Local) — Required
 
 ```bash
-# 1. Clone and install
+# Clone and install
 git clone https://github.com/irfndi/prism-liquidity-agent.git
 cd prism-liquidity-agent
 bun install
 
-# 2. Register — calls the deployed Cloudflare API, returns an API key
-prism register
+# Setup (writes .env, no API call)
+prism setup --non-interactive --helius-key=$HELIUS_KEY
 
-# 3. Setup (non-interactive for agent-driven installs)
-prism setup --non-interactive --helius-key=$HELIUS_API_KEY
-
-# 4. Start the trading agent
+# Start trading
 prism dev
 ```
 
-That's it. The agent handles everything else (paper trading by default, no wallet needed).
+Validate: the agent starts scanning. Check `logs/audit-trail.jsonl` for decisions.
+
+### Layer 2: API (Cloud) — Optional
+
+Adds cloud account features (whoami, subscription, Telegram linking):
+
+```bash
+# Register with the cloud API
+prism register
+
+# Validate
+prism whoami   # should show your user ID and tier
+```
+
+Skip this layer for local-only setups. The trading engine works fine without it.
+
+### Layer 3: Telegram (Chat) — Optional
+
+Adds Telegram-based monitoring. Requires the API layer first:
+
+```bash
+prism link-telegram   # generates a 6-char code
+# User sends the code to @prism_agent_bot
+```
+
+### Common Mistakes
+
+1. **Manually editing .env instead of using `prism setup`.** Postinstall writes a
+   default `.env` and `prism setup` is the supported way to update it. Editing
+   `.env` by hand works but skips validation.
+
+2. **Running `bun run dev` instead of `prism dev`.** Both start the engine, but
+   `prism dev` goes through the CLI layer and respects credentials, config paths,
+   and update checks. `bun run dev` bypasses all of that. Always use `prism dev`.
+
+3. **Assuming `prism register` is required.** It's not. The CLI works without a
+   cloud account. Skip it for local-only setups.
+
+4. **Setting `ANTHROPIC_API_KEY` or `CLAUDE_MODEL`.** These env vars are dead.
+   The engine has no AI/LLM integration. See "What's Dead/Unused" in `install.md`.
+
+5. **Expecting `LOG_LEVEL` to silence output.** The env var is loaded but never
+   checked. All log levels write to the audit trail regardless.
 
 ## Agent-Driven Onboarding Paths
 
