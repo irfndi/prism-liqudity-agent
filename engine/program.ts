@@ -558,8 +558,8 @@ export const program = Effect.gen(function* () {
         trackedPositions.set(decision.poolAddress, pos);
         yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
       } else if (decision.action === "EXIT") {
-        trackedPositions.delete(decision.poolAddress);
         yield* db.markPaperExited(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        trackedPositions.delete(decision.poolAddress);
       } else if (
         decision.action === "REBALANCE" &&
         decision.rebalanceParams &&
