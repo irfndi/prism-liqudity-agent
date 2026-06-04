@@ -6,10 +6,10 @@ This directory contains Prism installation skills for various agent harness mark
 
 | # | Marketplace | Status | Skill file | Local install path |
 |---|---|---|---|---|
-| 1 | **OpenCode** | ✅ Ready | [`opencode/SKILL.md`](opencode/SKILL.md) | `~/.opencode/skills/prism-install/SKILL.md` |
-| 1b | **OpenClaw** | ✅ Ready | [`openclaw/SKILL.md`](openclaw/SKILL.md) | `~/.openclaw/skills/prism-install/SKILL.md` |
-| 1c | **Hermes** | ✅ Ready | [`hermes/SKILL.md`](hermes/SKILL.md) | `~/.hermes/skills/software-development/prism-install/SKILL.md` |
-| 1d | **acpx / custom** | ✅ Ready | [`.agents/skills/prism-install.md`](../.agents/skills/prism-install.md) | `~/.agents/skills/prism-install.md` |
+| 1 | **OpenCode** | ⏳ Pending | (added in PR #40, not in this branch) | `~/.opencode/skills/prism-install/SKILL.md` |
+| 1b | **OpenClaw** | ⏳ Pending | (added in PR #40, not in this branch) | `~/.openclaw/skills/prism-install/SKILL.md` |
+| 1c | **Hermes** | ⏳ Pending | (added in PR #40, not in this branch) | `~/.hermes/skills/software-development/prism-install/SKILL.md` |
+| 1d | **acpx / custom** | ⏳ Pending | (added in PR #40, not in this branch) | `~/.agents/skills/prism-install.md` |
 | 2 | Claude Desktop (MCP) | ✅ Ready | [`../mcp-server/README.md`](../mcp-server/README.md) | Configure in `claude_desktop_config.json` |
 | 3 | OpenAI GPTs | ❌ Not started | — | Requires OpenAI GPT Store submission (UI-only) |
 | 4 | AutoGPT | ❌ Not started | — | Requires `autogpt-prism` PyPI package |
