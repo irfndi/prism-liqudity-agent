@@ -17,7 +17,7 @@ Agent harnesses discover installation guides automatically when a skill file is 
 
 | Harness | Local install path | Skill file |
 |---|---|---|
-| OpenCode | `~/.opencode/skills/prism-install/SKILL.md` | [`../marketplaces/opencode/SKILL.md`](../marketplaces/opencode/SKILL.md) |
+| OpenCode | `~/.config/opencode/skills/prism-install/SKILL.md` | [`../marketplaces/opencode/SKILL.md`](../marketplaces/opencode/SKILL.md) |
 | OpenClaw | `~/.openclaw/skills/prism-install/SKILL.md` | [`../marketplaces/openclaw/SKILL.md`](../marketplaces/openclaw/SKILL.md) |
 | Hermes | `~/.hermes/skills/software-development/prism-install/SKILL.md` | [`../marketplaces/hermes/SKILL.md`](../marketplaces/hermes/SKILL.md) |
 | acpx / custom | `~/.agents/skills/prism-install.md` | [`../.agents/skills/prism-install.md`](../.agents/skills/prism-install.md) |

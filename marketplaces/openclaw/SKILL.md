@@ -95,5 +95,5 @@ tail -n 20 logs/audit-trail.jsonl
 ## Uninstall
 
 ```bash
-rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id
+rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id ~/.config/prism/credentials.json ~/.config/prism/wallet.json
 ```
