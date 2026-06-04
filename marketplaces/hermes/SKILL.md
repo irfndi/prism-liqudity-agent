@@ -53,6 +53,8 @@ prism setup --non-interactive --helius-key=$HELIUS_KEY
 
 This writes `.env` with the Helius key, an optional watchlist, and paper-trading defaults. The default mode is **paper trading** — no real funds are at risk.
 
+If you don't know which pools to watch, also set `ENABLE_POOL_DISCOVERY=true` in `.env` so the agent can find candidates on its own.
+
 ### 3. Start
 
 ```bash
