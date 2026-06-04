@@ -537,9 +537,11 @@ export const program = Effect.gen(function* () {
   ): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (decision.action === "ENTER" && decision.positionSizeUsd) {
+        const existing = trackedPositions.get(decision.poolAddress);
+        const liveExited = existing && existing.paperExitedAt !== null && existing.positionPubKey !== null;
         const pos: PositionRecord = {
           poolAddress: decision.poolAddress,
-          positionPubKey: null,
+          positionPubKey: liveExited ? existing!.positionPubKey : null,
           depositedUsd: decision.positionSizeUsd,
           currentValueUsd: decision.positionSizeUsd,
           tokenXSymbol: pool.tokenXSymbol,
@@ -554,7 +556,7 @@ export const program = Effect.gen(function* () {
           trailingStopThreshold: null,
           highestValueUsd: null,
           lastRebalanceAt: 0,
-          paperExitedAt: null,
+          paperExitedAt: liveExited ? existing!.paperExitedAt : null,
         };
         trackedPositions.set(decision.poolAddress, pos);
         yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
