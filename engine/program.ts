@@ -125,6 +125,14 @@ export const program = Effect.gen(function* () {
       );
       for (const pos of paperExited) {
         console.warn(`  Paper-exited: ${pos.poolAddress}`);
+        if (pos.positionPubKey) {
+          trackedPositions.set(pos.poolAddress, pos);
+        }
+      }
+      for (const pos of paperExited) {
+        if (!pos.positionPubKey) {
+          yield* db.deletePosition(pos.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        }
       }
     }
   }
