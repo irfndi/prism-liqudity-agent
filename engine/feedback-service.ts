@@ -356,7 +356,7 @@ export const FeedbackLive = Layer.effect(
         };
         const hash = hashFeedback(feedback.summary, feedback.details, feedback.category);
 
-        const localRow = yield* db.getFeedbackByHash(hash);
+        const localRow = yield* db.getFeedbackByHash(hash, agentId);
         const local = localRow ? toFeedbackEntry(localRow) : null;
         if (local) {
           const ageMs = Date.now() - local.reportedAt;
@@ -502,7 +502,7 @@ export const FeedbackLive = Layer.effect(
           config.githubToken,
           config.githubRepo,
           issueTitle,
-            formatNewIssueBody(feedback, context, agentId),
+          formatNewIssueBody(feedback, context, agentId),
         );
         const entry: FeedbackEntry = {
           id: `gh-created-${created.number}-${Date.now()}`,
@@ -542,7 +542,7 @@ export const FeedbackLive = Layer.effect(
       listForAgent: (id: string) =>
         Effect.map(db.listFeedbackForAgent(id), (rows) => rows.map(toFeedbackEntry)),
       getByHash: (hash: string) =>
-        Effect.flatMap(db.getFeedbackByHash(hash), (row) =>
+        Effect.flatMap(db.getFeedbackByHash(hash, agentId), (row) =>
           Effect.succeed(row ? toFeedbackEntry(row) : null),
         ),
       setOptOut: (value: boolean) =>

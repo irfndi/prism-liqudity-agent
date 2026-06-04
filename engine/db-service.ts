@@ -413,12 +413,13 @@ export const DbLive = (dbPath?: string) =>
             );
           }),
 
-        getFeedbackByHash: (hash) =>
+        getFeedbackByHash: (hash, agentId) =>
           Effect.sync(() => {
             const row = queryOne<Record<string, unknown>>(
               db,
-              "SELECT * FROM agent_feedback WHERE hash = ? LIMIT 1",
+              "SELECT * FROM agent_feedback WHERE hash = ? AND agent_id = ? ORDER BY reported_at DESC LIMIT 1",
               hash,
+              agentId,
             );
             return row ? rowToFeedback(row) : null;
           }),

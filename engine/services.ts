@@ -383,7 +383,7 @@ export interface DbApi {
     reportedAt: number;
     hash: string;
   }) => Effect.Effect<void, unknown>;
-  readonly getFeedbackByHash: (hash: string) => Effect.Effect<
+  readonly getFeedbackByHash: (hash: string, agentId: string) => Effect.Effect<
     {
       id: string;
       agentId: string;

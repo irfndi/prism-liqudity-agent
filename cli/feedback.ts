@@ -40,7 +40,7 @@ function parseSeverity(raw: string | undefined, fallback: FeedbackSeverity): Fee
 
 function buildProgram(): Layer.Layer<FeedbackService | ConfigService, never, never> {
   return Layer.merge(
-    Layer.provide(FeedbackLive, Layer.merge(ConfigLive, DbLive())),
+    Layer.provide(FeedbackLive, Layer.merge(ConfigLive, DbLive(process.env.SQLITE_DB_PATH))),
     ConfigLive,
   );
 }
