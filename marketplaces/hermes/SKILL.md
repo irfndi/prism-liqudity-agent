@@ -41,8 +41,7 @@ export PATH="$HOME/.local/bin:$PATH"
 For a pinned release tarball (faster, no git history, reproducible):
 
 ```bash
-PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz \
-  curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

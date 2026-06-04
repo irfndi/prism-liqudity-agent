@@ -21,8 +21,7 @@ export PATH="$HOME/.local/bin:$PATH"
 For a pinned release tarball:
 
 ```bash
-PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz \
-  curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -44,11 +43,10 @@ Decisions are logged to `logs/audit-trail.jsonl`. To stop, send SIGINT (Ctrl+C).
 
 ## Available Commands
 
-- `prism status` — Check agent status
-- `prism positions` — List open positions
+- `prism whoami` — Show current account
 - `prism backtest` — Run backtest
 - `prism update` — Check for updates
-- `prism feedback "<msg>"` — File structured feedback
+- `prism issue "<msg>"` — File a GitHub issue
 - `prism register` — Create a cloud account (optional)
 - `prism wallet {generate,import,show}` — Manage the local Solana keypair
 - `prism link-telegram` — Link to `@prism_agent_bot`
