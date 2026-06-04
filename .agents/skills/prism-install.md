@@ -30,13 +30,6 @@ curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/s
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-For a pinned release tarball (faster, no git history, reproducible):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/download/v0.0.2/prism-v0.0.2.tar.gz bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
 ## Configure
 
 Non-interactive (for agents and CI):
