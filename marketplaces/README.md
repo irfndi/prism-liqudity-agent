@@ -6,7 +6,7 @@ This directory contains Prism installation skills for various agent harness mark
 
 | # | Marketplace | Status | Skill file | Local install path |
 |---|---|---|---|---|
-| 1 | **OpenCode** | ✅ Ready | [`opencode/SKILL.md`](opencode/SKILL.md) | `~/.opencode/skills/prism-install/SKILL.md` |
+| 1 | **OpenCode** | ✅ Ready | [`opencode/SKILL.md`](opencode/SKILL.md) | `~/.config/opencode/skills/prism-install/SKILL.md` |
 | 1b | **OpenClaw** | ✅ Ready | [`openclaw/SKILL.md`](openclaw/SKILL.md) | `~/.openclaw/skills/prism-install/SKILL.md` |
 | 1c | **Hermes** | ✅ Ready | [`hermes/SKILL.md`](hermes/SKILL.md) | `~/.hermes/skills/software-development/prism-install/SKILL.md` |
 | 1d | **acpx / custom** | ✅ Ready | [`.agents/skills/prism-install.md`](../.agents/skills/prism-install.md) | `~/.agents/skills/prism-install.md` |
@@ -48,8 +48,8 @@ For each ready marketplace, copy the SKILL.md to the local path shown in the tab
 
 ```bash
 # OpenCode
-mkdir -p ~/.opencode/skills/prism-install
-cp marketplaces/opencode/SKILL.md ~/.opencode/skills/prism-install/SKILL.md
+mkdir -p ~/.config/opencode/skills/prism-install
+cp marketplaces/opencode/SKILL.md ~/.config/opencode/skills/prism-install/SKILL.md
 
 # OpenClaw
 mkdir -p ~/.openclaw/skills/prism-install

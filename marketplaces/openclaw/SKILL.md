@@ -1,3 +1,8 @@
+---
+name: prism-install
+description: Install and run Prism for automated Meteora DLMM rebalancing on Solana
+---
+
 # Prism Liquidity Agent
 
 Install and run Prism for automated Meteora DLMM rebalancing on Solana.

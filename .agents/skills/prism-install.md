@@ -33,7 +33,7 @@ export PATH="$HOME/.local/bin:$PATH"
 For a pinned release tarball (faster, no git history, reproducible):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz bash
+curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/download/v0.0.2/prism-v0.0.2.tar.gz bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -110,7 +110,7 @@ tail -n 20 logs/audit-trail.jsonl   # should show scan cycle decisions
 Stop the engine with Ctrl+C (or `pkill -f "bun.*prism"`). The agent's install root is `~/.prism` by default. To uninstall:
 
 ```bash
-rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id
+rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id ~/.config/prism/credentials.json ~/.config/prism/wallet.json
 ```
 
 ## See Also
