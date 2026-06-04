@@ -335,6 +335,12 @@ console.warn("  • Each pool runs independently with $10K. Total PnL is the");
 console.warn("    sum of 6 independent portfolios ($60K deployed, not $10K).");
 console.warn("  • Synthetic bins (all liquiditySupply=1n) make binUtil=1.0");
 console.warn("    always, so the binUtil pre-filter is a no-op.");
+console.warn("  • NO TOKEN PRICE DEPRECIATION: the backtest models no");
+console.warn("    mechanism for the underlying token value to decrease.");
+console.warn("    Portfolio value only changes through fee accrual (+),");
+console.warn("    rebalancing IL (-), and force-exit penalties (-). A pool");
+console.warn("    for a token that dropped 90% would still show positive");
+console.warn("    returns. The reported PnL is a meaningful overestimate.");
 console.warn("═══════════════════════════════════════════════════════════════\n");
 
 const configs: ReadonlyArray<{ name: string; cfg: BacktestConfig }> = [
