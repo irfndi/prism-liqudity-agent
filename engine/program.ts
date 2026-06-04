@@ -113,6 +113,31 @@ export const program = Effect.gen(function* () {
     trackedPositions.set(pos.poolAddress, pos);
   }
 
+  if (!config.paperTrading) {
+    const paperExited = yield* db
+      .getPaperExitedPositions()
+      .pipe(Effect.catchAll(() => Effect.succeed([])));
+    if (paperExited.length > 0) {
+      console.warn(
+        `Found ${paperExited.length} paper-exited position(s) from a previous paper-trading run. ` +
+          `If you entered these in live mode, the on-chain position is NOT closed by the paper exit — ` +
+          `close it manually. The engine tracks these rows to prevent re-entering the same pool ` +
+          `while the on-chain position is still open.`,
+      );
+      for (const pos of paperExited) {
+        console.warn(`  Paper-exited: ${pos.poolAddress}`);
+        if (pos.positionPubKey) {
+          trackedPositions.set(pos.poolAddress, pos);
+        }
+      }
+      for (const pos of paperExited) {
+        if (!pos.positionPubKey) {
+          yield* db.deletePosition(pos.poolAddress).pipe(Effect.catchAll(() => Effect.void));
+        }
+      }
+    }
+  }
+
   // ─── Pool discovery ────────────────────────────────────────────────────────
 
   let poolsToScan = [...config.watchlistPools];
@@ -512,9 +537,11 @@ export const program = Effect.gen(function* () {
   ): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (decision.action === "ENTER" && decision.positionSizeUsd) {
+        const existing = trackedPositions.get(decision.poolAddress);
+        const liveExited = existing && existing.paperExitedAt !== null && existing.positionPubKey !== null;
         const pos: PositionRecord = {
           poolAddress: decision.poolAddress,
-          positionPubKey: null,
+          positionPubKey: liveExited ? existing!.positionPubKey : null,
           depositedUsd: decision.positionSizeUsd,
           currentValueUsd: decision.positionSizeUsd,
           tokenXSymbol: pool.tokenXSymbol,
@@ -529,12 +556,13 @@ export const program = Effect.gen(function* () {
           trailingStopThreshold: null,
           highestValueUsd: null,
           lastRebalanceAt: 0,
+          paperExitedAt: liveExited ? existing!.paperExitedAt : null,
         };
         trackedPositions.set(decision.poolAddress, pos);
         yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
       } else if (decision.action === "EXIT") {
+        yield* db.markPaperExited(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
         trackedPositions.delete(decision.poolAddress);
-        yield* db.deletePosition(decision.poolAddress).pipe(Effect.catchAll(() => Effect.void));
       } else if (
         decision.action === "REBALANCE" &&
         decision.rebalanceParams &&
@@ -627,6 +655,7 @@ export const program = Effect.gen(function* () {
             trailingStopThreshold: null,
             highestValueUsd: null,
             lastRebalanceAt: 0,
+            paperExitedAt: null,
           };
           trackedPositions.set(decision.poolAddress, pos);
           yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));

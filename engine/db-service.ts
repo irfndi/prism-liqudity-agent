@@ -24,6 +24,7 @@ export interface PositionRecord {
   trailingStopThreshold: number | null;
   highestValueUsd: number | null;
   lastRebalanceAt: number;
+  paperExitedAt: number | null;
 }
 
 export interface AuditRecord {
@@ -97,10 +98,10 @@ export const DbLive = (dbPath?: string) =>
               pool_address, position_pubkey, deposited_usd, current_value_usd,
               token_x_symbol, token_y_symbol, active_bin_id, lower_bin_id, upper_bin_id,
               timestamp, out_of_range_since, oor_cycle_count, last_fee_claim_at,
-              trailing_stop_threshold, highest_value_usd, last_rebalance_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              trailing_stop_threshold, highest_value_usd, last_rebalance_at, paper_exited_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(pool_address) DO UPDATE SET
-              position_pubkey = excluded.position_pubkey,
+              position_pubkey = COALESCE(excluded.position_pubkey, positions.position_pubkey),
               deposited_usd = excluded.deposited_usd,
               current_value_usd = excluded.current_value_usd,
               token_x_symbol = excluded.token_x_symbol,
@@ -114,7 +115,8 @@ export const DbLive = (dbPath?: string) =>
               last_fee_claim_at = excluded.last_fee_claim_at,
               trailing_stop_threshold = excluded.trailing_stop_threshold,
               highest_value_usd = excluded.highest_value_usd,
-              last_rebalance_at = excluded.last_rebalance_at`,
+              last_rebalance_at = excluded.last_rebalance_at,
+              paper_exited_at = excluded.paper_exited_at`,
               pos.poolAddress,
               pos.positionPubKey,
               pos.depositedUsd,
@@ -131,6 +133,7 @@ export const DbLive = (dbPath?: string) =>
               pos.trailingStopThreshold,
               pos.highestValueUsd,
               pos.lastRebalanceAt,
+              pos.paperExitedAt,
             );
           }),
 
@@ -146,13 +149,35 @@ export const DbLive = (dbPath?: string) =>
 
         getAllPositions: () =>
           Effect.sync(() => {
-            const rows = queryAll<Record<string, unknown>>(db, "SELECT * FROM positions");
+            const rows = queryAll<Record<string, unknown>>(
+              db,
+              "SELECT * FROM positions WHERE paper_exited_at IS NULL",
+            );
+            return rows.map(rowToPosition);
+          }),
+
+        getPaperExitedPositions: () =>
+          Effect.sync(() => {
+            const rows = queryAll<Record<string, unknown>>(
+              db,
+              "SELECT * FROM positions WHERE paper_exited_at IS NOT NULL ORDER BY paper_exited_at DESC",
+            );
             return rows.map(rowToPosition);
           }),
 
         deletePosition: (poolAddress) =>
           Effect.sync(() => {
             runOne(db, "DELETE FROM positions WHERE pool_address = ?", poolAddress);
+          }),
+
+        markPaperExited: (poolAddress) =>
+          Effect.sync(() => {
+            runOne(
+              db,
+              "UPDATE positions SET paper_exited_at = ? WHERE pool_address = ?",
+              Date.now(),
+              poolAddress,
+            );
           }),
 
         updatePositionValue: (poolAddress, currentValueUsd, highestValueUsd) =>
@@ -479,6 +504,7 @@ function rowToPosition(row: Record<string, unknown>): PositionRecord {
       row.trailing_stop_threshold != null ? Number(row.trailing_stop_threshold) : null,
     highestValueUsd: row.highest_value_usd != null ? Number(row.highest_value_usd) : null,
     lastRebalanceAt: Number(row.last_rebalance_at ?? 0),
+    paperExitedAt: row.paper_exited_at != null ? Number(row.paper_exited_at) : null,
   };
 }
 
