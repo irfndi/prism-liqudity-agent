@@ -476,7 +476,7 @@ export interface AgentFeedback {
   readonly severity: FeedbackSeverity;
   readonly summary: string;
   readonly details?: string;
-  readonly context: FeedbackContext;
+  readonly context?: FeedbackContext;
   readonly relatedFiles?: ReadonlyArray<string>;
 }
 

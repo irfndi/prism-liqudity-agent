@@ -42,7 +42,7 @@ function buildProgram(): Layer.Layer<FeedbackService | ConfigService, never, nev
   return Layer.merge(
     Layer.provide(FeedbackLive, Layer.merge(ConfigLive, DbLive())),
     ConfigLive,
-  ) as Layer.Layer<FeedbackService | ConfigService, never, never>;
+  );
 }
 
 function formatResult(result: FeedbackResult): string {

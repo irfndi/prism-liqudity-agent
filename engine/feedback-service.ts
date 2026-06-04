@@ -1,6 +1,7 @@
 import { Effect, Layer } from "effect";
 import { createHash } from "crypto";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import { ConfigService } from "./config-service.js";
 import { DbService } from "./services.js";
@@ -107,10 +108,28 @@ function jaccardSimilarity(a: ReadonlyArray<string>, b: ReadonlyArray<string>): 
 
 function detectInstallMethod(): string {
   if (process.env.PRISM_TARBALL_INSTALL === "1") return "tarball";
-  const wrapperPath = join(process.env.HOME ?? "", ".local", "bin", "prism");
+  const wrapperPath = join(homedir(), ".local", "bin", "prism");
   if (existsSync(wrapperPath)) return "curl";
   if (existsSync(join(process.cwd(), ".git"))) return "git";
   return "unknown";
+}
+
+const OPT_OUT_FILE = join(homedir(), ".config", "prism", "feedback-opt-out");
+
+function readOptOut(): boolean {
+  try {
+    if (existsSync(OPT_OUT_FILE)) {
+      return readFileSync(OPT_OUT_FILE, "utf-8").trim() === "true";
+    }
+  } catch {}
+  return false;
+}
+
+function writeOptOut(value: boolean): void {
+  try {
+    mkdirSync(join(homedir(), ".config", "prism"), { recursive: true });
+    writeFileSync(OPT_OUT_FILE, value ? "true" : "false");
+  } catch {}
 }
 
 function buildContext(): FeedbackContext {
@@ -239,17 +258,21 @@ function commentOnGitHubIssue(
   });
 }
 
-function formatNewIssueBody(feedback: AgentFeedback, agentId: string): string {
+function formatNewIssueBody(
+  feedback: AgentFeedback,
+  context: FeedbackContext,
+  agentId: string,
+): string {
   const lines: string[] = [
     "## Agent Feedback",
     "",
     `**Category:** ${feedback.category}`,
     `**Severity:** ${feedback.severity}`,
     `**Agent ID:** ${agentId}`,
-    `**Version:** ${feedback.context.prismVersion}`,
-    `**Platform:** ${feedback.context.platform}`,
-    `**Install method:** ${feedback.context.installMethod}`,
-    `**Runtime:** ${feedback.context.runtime}`,
+    `**Version:** ${context.prismVersion}`,
+    `**Platform:** ${context.platform}`,
+    `**Install method:** ${context.installMethod}`,
+    `**Runtime:** ${context.runtime}`,
     "",
     "### Summary",
     feedback.summary,
@@ -268,9 +291,13 @@ function formatNewIssueBody(feedback: AgentFeedback, agentId: string): string {
   return lines.join("\n");
 }
 
-function formatCommentBody(feedback: AgentFeedback, agentId: string): string {
+function formatCommentBody(
+  feedback: AgentFeedback,
+  context: FeedbackContext,
+  agentId: string,
+): string {
   const parts: string[] = [
-    `+1 from agent on ${feedback.context.platform} (${feedback.context.runtime}).`,
+    `+1 from agent on ${context.platform} (${context.runtime}).`,
     "",
     feedback.summary,
   ];
@@ -315,33 +342,58 @@ export const FeedbackLive = Layer.effect(
     const config = yield* ConfigService;
     const db = yield* DbService;
     const agentId = detectAgentId();
-    const state = { optOut: config.feedbackOptOut };
+    const state = { optOut: config.feedbackOptOut || readOptOut() };
 
     const submit = (rawFeedback: AgentFeedback): Effect.Effect<FeedbackResult, never> =>
       Effect.gen(function* () {
         if (state.optOut) {
           return { kind: "opt_out" as const };
         }
+        const context: FeedbackContext = rawFeedback.context ?? buildContext();
         const feedback: AgentFeedback = {
           ...rawFeedback,
-          context: rawFeedback.context ?? buildContext(),
+          context,
         };
         const hash = hashFeedback(feedback.summary, feedback.details, feedback.category);
 
         const localRow = yield* db.getFeedbackByHash(hash);
         const local = localRow ? toFeedbackEntry(localRow) : null;
-        if (local && local.githubIssueNumber !== null) {
+        if (local) {
           const ageMs = Date.now() - local.reportedAt;
           if (ageMs < FEEDBACK_LIMITS.duplicateCooldownMs) {
             logger.info(
               `Skipping duplicate feedback (cooldown ${Math.round(ageMs / 1000)}s): ` +
                 `${feedback.summary} → issue #${local.githubIssueNumber}`,
             );
+
+            if (local.githubIssueNumber !== null) {
+              return {
+                kind: "duplicate" as const,
+                issueNumber: local.githubIssueNumber,
+                issueUrl: local.githubIssueUrl ?? "",
+              };
+            }
             return {
-              kind: "duplicate" as const,
-              issueNumber: local.githubIssueNumber,
-              issueUrl: local.githubIssueUrl ?? "",
+              kind: "local_only" as const,
+              localId: local.id,
             };
+          }
+        }
+
+        const allRecent = yield* db.listFeedbackForAgent(agentId);
+        const now = Date.now();
+        const rateHourCount = allRecent.filter((f) => f.reportedAt > now - 60 * 60 * 1000).length;
+        if (rateHourCount >= FEEDBACK_LIMITS.perHour) {
+          return { kind: "rate_limited" as const, reason: `Exceeded ${FEEDBACK_LIMITS.perHour} per hour` };
+        }
+        const rateDayCount = allRecent.filter((f) => f.reportedAt > now - 24 * 60 * 60 * 1000).length;
+        if (rateDayCount >= FEEDBACK_LIMITS.perDay) {
+          return { kind: "rate_limited" as const, reason: `Exceeded ${FEEDBACK_LIMITS.perDay} per day` };
+        }
+        if (allRecent.length > 0) {
+          const lastSubmission = Math.max(...allRecent.map((f) => f.reportedAt));
+          if (now - lastSubmission < FEEDBACK_LIMITS.minIntervalMs) {
+            return { kind: "rate_limited" as const, reason: `Minimum interval is ${FEEDBACK_LIMITS.minIntervalMs / 1000}s` };
           }
         }
 
@@ -419,7 +471,7 @@ export const FeedbackLive = Layer.effect(
             config.githubToken,
             config.githubRepo,
             existing.number,
-            formatCommentBody(feedback, agentId),
+            formatCommentBody(feedback, context, agentId),
           );
           const entry: FeedbackEntry = {
             id: `gh-comment-${existing.number}-${Date.now()}`,
@@ -450,7 +502,7 @@ export const FeedbackLive = Layer.effect(
           config.githubToken,
           config.githubRepo,
           issueTitle,
-          formatNewIssueBody(feedback, agentId),
+            formatNewIssueBody(feedback, context, agentId),
         );
         const entry: FeedbackEntry = {
           id: `gh-created-${created.number}-${Date.now()}`,
@@ -496,6 +548,7 @@ export const FeedbackLive = Layer.effect(
       setOptOut: (value: boolean) =>
         Effect.sync(() => {
           state.optOut = value;
+          writeOptOut(value);
         }),
       getOptOut: () => Effect.sync(() => state.optOut),
     };
