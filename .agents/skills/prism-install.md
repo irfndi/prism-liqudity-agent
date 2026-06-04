@@ -67,14 +67,13 @@ This spawns the engine. Decisions are logged to `logs/audit-trail.jsonl`. To sto
 
 | Command | Purpose |
 |---|---|
-| `prism status` | Check current state (alias for `prism whoami` if registered) |
 | `prism whoami` | Show cloud account info (requires `prism register`) |
 | `prism register` | Create a cloud account, returns an API key (optional) |
 | `prism setup` | Interactive `.env` wizard |
 | `prism dev` | Start the trading engine |
 | `prism backtest` | Run a historical simulation (synthetic or replay from snapshots) |
 | `prism update` | Check for and apply updates from R2/GitHub releases |
-| `prism feedback "<msg>"` | File structured feedback to the project (auto-deduped) |
+| `prism issue "<msg>"` | File a GitHub issue (auto-deduped) |
 | `prism wallet {generate,import,show}` | Manage the local Solana keypair (required for live trading) |
 | `prism link-telegram` | Link the cloud account to `@prism_agent_bot` |
 

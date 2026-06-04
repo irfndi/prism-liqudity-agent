@@ -76,13 +76,12 @@ The CLI is fully functional without the cloud API. Do not assume `prism register
 | Command | Purpose |
 |---|---|
 | `prism dev` | Start the trading engine |
-| `prism status` | Check current state |
 | `prism setup` | Interactive `.env` wizard |
 | `prism register` | Create a cloud account (optional) |
 | `prism whoami` | Show cloud account info (requires `prism register`) |
 | `prism backtest` | Run a historical simulation |
 | `prism update` | Check for and apply updates |
-| `prism feedback "<msg>"` | File structured feedback to the project |
+| `prism issue "<msg>"` | File a GitHub issue (auto-deduped) |
 | `prism wallet {generate,import,show}` | Manage the local Solana keypair |
 | `prism link-telegram` | Link the cloud account to `@prism_agent_bot` |
 

@@ -26,7 +26,7 @@ export PATH="$HOME/.local/bin:$PATH"
 For a pinned release tarball (faster, no git history, reproducible):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-latest.tar.gz bash
+curl -fsSL https://raw.githubusercontent.com/irfndi/prism-liquidity-agent/main/scripts/install.sh | PRISM_TARBALL_URL=https://github.com/irfndi/prism-liquidity-agent/releases/latest/download/prism-v0.0.2.tar.gz bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -59,13 +59,12 @@ Decisions are logged to `logs/audit-trail.jsonl`. To stop, send SIGINT (Ctrl+C).
 | Command | Purpose |
 |---|---|
 | `prism dev` | Start the trading engine |
-| `prism status` | Check current state |
 | `prism setup` | Interactive `.env` wizard |
 | `prism register` | Create a cloud account (optional) |
 | `prism whoami` | Show cloud account info (requires `prism register`) |
 | `prism backtest` | Run a historical simulation |
 | `prism update` | Check for and apply updates |
-| `prism feedback "<msg>"` | File structured feedback to the project |
+| `prism issue "<msg>"` | File a GitHub issue (auto-deduped) |
 | `prism wallet {generate,import,show}` | Manage the local Solana keypair |
 | `prism link-telegram` | Link the cloud account to `@prism_agent_bot` |
 
@@ -110,5 +109,5 @@ tail -n 20 logs/audit-trail.jsonl   # should show scan cycle decisions
 ## Uninstall
 
 ```bash
-rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id
+rm -rf ~/.prism ~/.local/bin/prism ~/.config/prism/agent-id ~/.config/prism/install-id ~/.config/prism/credentials.json ~/.config/prism/wallet.json
 ```
