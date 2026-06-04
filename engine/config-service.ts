@@ -39,6 +39,9 @@ export interface AppConfig {
   readonly updateAllowDirty: boolean;
   // R2 release tarball source (GitHub-independent updates)
   readonly updateR2PublicUrl: string;
+  readonly githubToken: string;
+  readonly githubRepo: string;
+  readonly feedbackOptOut: boolean;
 }
 
 export class ConfigService extends Context.Tag("ConfigService")<ConfigService, AppConfig>() {}
@@ -78,11 +81,7 @@ const loadConfig = Effect.gen(function* () {
     0,
     24 * 60 * 60 * 1000,
   );
-  const minRebalanceNetBenefitUsd = yield* validatedNumber(
-    "MIN_REBALANCE_NET_BENEFIT_USD",
-    0,
-    10,
-  );
+  const minRebalanceNetBenefitUsd = yield* validatedNumber("MIN_REBALANCE_NET_BENEFIT_USD", 0, 10);
   const confidenceThreshold = yield* validatedNumber("CONFIDENCE_THRESHOLD", 0, 0.65);
   const paperPortfolioUsd = yield* validatedNumber("PAPER_PORTFOLIO_USD", 1, 10_000);
   const minBinUtilization = yield* validatedNumber("MIN_BIN_UTILIZATION", 0, 0.3);
@@ -119,16 +118,18 @@ const loadConfig = Effect.gen(function* () {
   );
 
   // Auto-update config
-  const autoUpdate = yield* Config.boolean("AUTO_UPDATE").pipe(
-    Effect.orElseSucceed(() => true),
+  const autoUpdate = yield* Config.boolean("AUTO_UPDATE").pipe(Effect.orElseSucceed(() => true));
+  const updateCheckIntervalMs = yield* validatedNumber(
+    "UPDATE_CHECK_INTERVAL_MS",
+    60_000,
+    21_600_000,
   );
-  const updateCheckIntervalMs = yield* validatedNumber("UPDATE_CHECK_INTERVAL_MS", 60_000, 21_600_000);
   const updateChannelRaw = yield* Config.string("UPDATE_CHANNEL").pipe(
     Effect.orElseSucceed(() => "stable"),
   );
   const validChannels = ["stable", "beta", "dev"] as const;
-  const updateChannel = validChannels.includes(updateChannelRaw as typeof validChannels[number])
-    ? (updateChannelRaw as typeof validChannels[number])
+  const updateChannel = validChannels.includes(updateChannelRaw as (typeof validChannels)[number])
+    ? (updateChannelRaw as (typeof validChannels)[number])
     : "stable";
   const updateGithubRepo = yield* Config.string("UPDATE_GITHUB_REPO").pipe(
     Effect.orElseSucceed(() => "irfndi/prism-liquidity-agent"),
@@ -138,6 +139,14 @@ const loadConfig = Effect.gen(function* () {
   );
   const updateR2PublicUrl = yield* Config.string("UPDATE_R2_PUBLIC_URL").pipe(
     Effect.orElseSucceed(() => "https://r2.prism-agent.com"),
+  );
+
+  const githubToken = yield* Config.string("GITHUB_TOKEN").pipe(Effect.orElseSucceed(() => ""));
+  const githubRepo = yield* Config.string("GITHUB_REPO").pipe(
+    Effect.orElseSucceed(() => "irfndi/prism-liquidity-agent"),
+  );
+  const feedbackOptOut = yield* Config.boolean("PRISM_FEEDBACK_OPT_OUT").pipe(
+    Effect.orElseSucceed(() => false),
   );
 
   const watchlistPools = watchlistPoolsRaw
@@ -180,6 +189,9 @@ const loadConfig = Effect.gen(function* () {
     updateGithubRepo,
     updateAllowDirty,
     updateR2PublicUrl,
+    githubToken,
+    githubRepo,
+    feedbackOptOut,
   };
 
   return cfg;

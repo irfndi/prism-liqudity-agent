@@ -324,6 +324,81 @@ prism-backups/
 - `GPG_PRIVATE_KEY` — (optional) GPG key for tarball signing
 - `GITHUB_TOKEN` — (optional) for creating GitHub Releases
 
+## Agent feedback system (issue #32)
+
+Prism agents can file structured feedback to the project's GitHub Issues as a canonical channel. Without `GITHUB_TOKEN` set, feedback is stored locally in `~/.config/prism/agent-id` and logged but not uploaded.
+
+### Env vars
+
+- `GITHUB_TOKEN` (recommended) — Personal access token with `repo` scope. Enables GitHub Issues filing.
+- `GITHUB_REPO` (default `irfndi/prism-liquidity-agent`) — Target repo for filed issues.
+- `PRISM_FEEDBACK_OPT_OUT` (default `false`) — Set to `true` to disable automatic feedback for this agent.
+
+### CLI
+
+```bash
+prism feedback "Install process requires manual Bun install" --category friction
+prism feedback "Add --yes flag to setup prompts"          --category suggestion
+prism feedback "Scan cycle is 30s on first run"           --category observation
+prism feedback "Backtest output is very clear"            --category praise
+prism feedback status    # show this agent's history + rate-limit state
+prism feedback list      # alias for status
+prism feedback disable   # opt out (persists for the agent)
+prism feedback enable    # re-enable
+```
+
+Valid categories: `friction | suggestion | observation | praise`. Valid severities: `low | medium | high` (default `medium`).
+
+### Dedup algorithm
+
+Each feedback is hashed (category + normalized summary + normalized details, first 16 hex of SHA-256). Before creating a new GitHub issue:
+
+1. **Local cooldown**: if the same hash was reported by this agent in the last 24h, comment on the existing local-stored issue number instead of re-filing.
+2. **GitHub search**: extract up to 5 keywords (≥4 chars, stop words filtered), search `repo:<GITHUB_REPO> label:agent-feedback is:open <keywords>`.
+3. **Jaccard similarity**: for each candidate, compute Jaccard similarity between feedback keywords and issue title+body keywords. If ≥ 0.7, add a "+1" comment to the existing issue instead of creating a duplicate.
+4. **No match**: create a new issue labeled `agent-feedback` with the full context block.
+
+### Rate limits
+
+- 5 feedback items per hour per agent
+- 10 per day per agent
+- 60s minimum interval between consecutive feedback items
+
+When the limit is hit, `submit` returns `{ kind: "rate_limited", reason: "..." }` and the feedback is NOT stored locally (it would only be deduped against the local store, which is fine — re-trying after the cooldown works).
+
+### Issue format
+
+```markdown
+## Agent Feedback
+
+**Category:** Friction
+**Severity:** Medium
+**Agent ID:** a1b2c3d4 (hashed)
+**Version:** 1.2.3
+**Platform:** linux-x64
+**Install method:** curl
+**Runtime:** bun 1.3.14
+
+### Summary
+
+Install process requires manual Bun installation
+
+### Details
+
+After the curl installer ran, had to manually install Bun via
+`curl -fsSL https://bun.sh/install | bash` and re-source PATH.
+
+### Related files
+
+- `scripts/install.sh`
+
+---
+
+_This issue was automatically created by a Prism agent. If you're a human, please add the `confirmed` label if this is valid._
+```
+
+Humans can review filed issues, add the `confirmed` label, or close as duplicate. The system is best-effort — if the GitHub API fails, the error is logged but the agent is not crashed.
+
 ## Testing
 
 - Engine tests live in `bench/*.test.ts`. There is no `tests/` directory.
