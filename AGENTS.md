@@ -445,7 +445,7 @@ Not yet implemented. The design is privacy-first by default (the `install_id` is
 - Engine suite is Effect-Layer based: each test builds a `Layer.merge(AuditLive, DbLive(":memory:"))` and provides it to the system under test. Use this pattern for new tests.
 - `bench/audit.test.ts` mutates `bench/tmp-audit/` — do not commit it.
 - Coverage thresholds (80% / 70%) apply only to _included_ files (see above). Don't read the coverage report as a project-wide signal.
-- Cloudflare tests live in `cloudflare/workers/**/*.test.ts` and run via `@cloudflare/vitest-pool-workers`. Must use `vitest@^3.2.0` (not 4.x) due to pool compatibility — enforced in `cloudflare/package.json`.
+- Cloudflare tests live in `cloudflare/workers/**/*.test.ts` and run via `@cloudflare/vitest-pool-workers@^0.16.12` on `vitest@^4.x`. The vitest version is enforced in `cloudflare/package.json`.
 - No integration tests, no mocks for Meteora SDK, no tests exercise the embedding pipeline or the main loop. `program.ts`, `adapter-service.ts`, and `engine/embeddings.ts` are all excluded from coverage and untested. The 11 engine test files cover pure logic only. CI passes with fake API keys because nothing real runs.
 
 ## Key constraints
