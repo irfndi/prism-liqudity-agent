@@ -495,7 +495,6 @@ app.post("/v1/issue", async (c) => {
     if (count >= 10) {
       return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
     }
-    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
   }
 
   const repo = GITHUB_REPO || "irfndi/prism-liquidity-agent";
@@ -518,6 +517,16 @@ app.post("/v1/issue", async (c) => {
 
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status}`);
+    }
+
+    // Only consume the rate-limit slot on successful GitHub creation.
+    // A failed API call (network error, 5xx, auth failure) does not burn
+    // the user's budget.
+    if (CACHE) {
+      const rateKey = `rate_limit:issue:${clientIp}`;
+      const current = await CACHE.get(rateKey);
+      const count = current ? parseInt(current, 10) : 0;
+      await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
     }
 
     const issue = (await response.json()) as { number?: number; html_url?: string };

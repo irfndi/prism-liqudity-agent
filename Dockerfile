@@ -10,6 +10,7 @@ COPY tsconfig.json tsdown.config.ts ./
 COPY engine ./engine
 COPY cli ./cli
 COPY ops ./ops
+COPY types ./types
 
 RUN bun run build
 
