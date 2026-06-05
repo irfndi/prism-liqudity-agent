@@ -38,7 +38,9 @@ export const AdapterLive = Layer.effect(
         const cached = tokenMetaCache.get(mint);
         if (cached) return cached;
 
-        const url = `https://mainnet.helius-rpc.com/?api-key=${config.heliusApiKey}`;
+        const url = config.heliusApiKey
+          ? `https://mainnet.helius-rpc.com/?api-key=${config.heliusApiKey}`
+          : config.solanaRpcUrl;
         const res = yield* Effect.tryPromise(() =>
           fetch(url, {
             method: "POST",

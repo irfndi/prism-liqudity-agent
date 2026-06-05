@@ -13,5 +13,5 @@ export const supportCommand = new Command("support")
   .action(() => {
     console.log("Docs: https://github.com/irfndi/prism-liquidity-agent/tree/main/docs");
     console.log("Issues: https://github.com/irfndi/prism-liquidity-agent/issues");
-    console.log("Telegram: @prism_dlmm_bot");
+    console.log("Telegram: @prism_agent_bot");
   });

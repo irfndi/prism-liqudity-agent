@@ -471,7 +471,18 @@ app.post("/v1/agent-status", async (c) => {
 });
 
 app.post("/v1/issue", async (c) => {
-  const { GITHUB_TOKEN, GITHUB_REPO } = c.env;
+  const { GITHUB_TOKEN, GITHUB_REPO, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  // Rate limit: 10 issues per IP per hour
+  const rateKey = `rate_limit:issue:${clientIp}`;
+  const current = await CACHE.get(rateKey);
+  const count = current ? parseInt(current) : 0;
+  if (count >= 10) {
+    return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+  }
+  await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+
   const body = (await c.req.json().catch(() => ({}))) as { title: string; body: string };
 
   if (!body.title) {
