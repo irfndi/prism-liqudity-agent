@@ -1,20 +1,28 @@
-# ── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM oven/bun:1.2-alpine AS builder
+# ── Stage 1: Build ─────────────────────────────────────────────────────────
+FROM oven/bun:1.2-slim AS builder
 
 WORKDIR /app
 
-COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile --ignore-scripts
 
-COPY tsconfig.json tsup.config.ts ./
-COPY src ./src
+COPY tsconfig.json tsdown.config.ts ./
+COPY engine ./engine
+COPY cli ./cli
+COPY ops ./ops
 
 RUN bun run build
 
-# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+# ── Stage 2: Runtime ───────────────────────────────────────────────────────
+FROM oven/bun:1.2-slim AS runtime
 
 WORKDIR /app
+
+# sqlite-vec ships glibc-only binaries; Debian slim provides a libsqlite3
+# compiled with SQLITE_ENABLE_LOAD_EXTENSION so the vec0 module can load.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libsqlite3-0 ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
 RUN addgroup -g 1001 -S agent && adduser -u 1001 -S agent -G agent
@@ -28,10 +36,7 @@ RUN mkdir -p /app/logs && chown -R agent:agent /app/logs
 
 USER agent
 
-EXPOSE 3000
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD node -e "process.exit(0)"
 
-CMD ["node", "dist/main.js"]
-
+CMD ["bun", "dist/index.mjs"]
