@@ -474,7 +474,12 @@ app.post("/v1/issue", async (c) => {
   const { GITHUB_TOKEN, GITHUB_REPO, CACHE } = c.env;
   const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
 
-  // Rate limit: 10 issues per IP per hour
+  // Rate limit: 10 issues per IP per hour.
+  // NOTE: Cloudflare KV is eventually consistent, so a burst of concurrent
+  // requests from the same IP can briefly exceed this limit (N-1 extra for
+  // N concurrent arrivals). This is acceptable for an abuse-prevention
+  // ceiling on issue filing, not a security-critical control. For strict
+  // limits, use Durable Objects or a D1 transaction.
   const rateKey = `rate_limit:issue:${clientIp}`;
   const current = await CACHE.get(rateKey);
   const count = current ? parseInt(current) : 0;

@@ -264,8 +264,13 @@ const program = Effect.gen(function* () {
   }
 
   const pools = yield* db.getSnapshotPools();
-  const total = yield* db.getSnapshotCount(pools[0] ?? "");
-  log.info(`done. ${pools.length} pool(s) in pool_snapshots (sample count: ${total})`);
+  let total = 0;
+  for (const p of pools) {
+    const c = yield* db.getSnapshotCount(p);
+    log.info(`  ${p}: ${c} snapshots`);
+    total += c;
+  }
+  log.info(`done. ${pools.length} pool(s) in pool_snapshots, ${total} snapshots total`);
 });
 
 await Effect.runPromise(
