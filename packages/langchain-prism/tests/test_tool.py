@@ -30,8 +30,10 @@ class TestFindPrism:
         fake_dir.rmdir()
 
     def test_raises_when_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If prism is not on PATH, _find_prism_binary raises FileNotFoundError."""
+        """If prism is not found anywhere, _find_prism_binary raises FileNotFoundError."""
         monkeypatch.setenv("PATH", "/nonexistent")
+        monkeypatch.delenv("PRISM_BIN", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: Path("/nonexistent-home"))
         with pytest.raises(FileNotFoundError):
             _find_prism_binary()
 

@@ -50,5 +50,14 @@ bench/tmp-audit/
 # Wrangler local state
 .wrangler/
 
+# Python build artifacts
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.egg
+build/
+dist/
+
 # Claude session files
 .claude/scheduled_tasks.lock
