@@ -182,12 +182,19 @@ jobs:
           # Path must match R2_MANIFEST_PATHS.dev in engine/update-utils.ts
           npx wrangler r2 object put "prism-backups/releases/channel/dev.json" --file dev.json --remote
 
-      - name: Upload assets to GitHub Release
+      - name: Create or update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          # Release is auto-created by the tag push; we just upload assets
+          # Create release if it doesn't exist, then upload assets
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Release ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag \
+            "prism-v${VERSION}.tar.gz" \
+            "prism-v${VERSION}.tar.gz.sha256" \
+            2>/dev/null || \
           gh release upload "${GITHUB_REF_NAME}" \
             "prism-v${VERSION}.tar.gz" \
             "prism-v${VERSION}.tar.gz.sha256" \
