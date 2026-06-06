@@ -114,6 +114,8 @@ main() {
   publish_python_pkg "$REPO_ROOT/packages/autogpt-prism" "autogpt-prism"
   echo ""
 
+  cd "$REPO_ROOT"
+
   log_info "All packages published successfully!"
   echo ""
   echo "Next steps:"
