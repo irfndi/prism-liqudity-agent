@@ -10,6 +10,16 @@ INSTALL_DIR="${PRISM_INSTALL_DIR:-$HOME/.prism}"
 BIN_DIR="${PRISM_BIN_DIR:-$HOME/.local/bin}"
 TARBALL_URL="${PRISM_TARBALL_URL:-}"
 
+# Auto-detect latest release tarball from GitHub if not explicitly provided
+if [ -z "$TARBALL_URL" ] && [ -z "$PRISM_SKIP_AUTO_TARBALL" ]; then
+  echo "→ Detecting latest release..."
+  LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+  if [ -n "$LATEST_TAG" ]; then
+    TARBALL_URL="https://github.com/$REPO/releases/download/$LATEST_TAG/prism-$LATEST_TAG.tar.gz"
+    echo "→ Latest release: $LATEST_TAG"
+  fi
+fi
+
 echo "→ Installing prism to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 

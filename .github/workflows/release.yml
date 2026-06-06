@@ -182,13 +182,15 @@ jobs:
           # Path must match R2_MANIFEST_PATHS.dev in engine/update-utils.ts
           npx wrangler r2 object put "prism-backups/releases/channel/dev.json" --file dev.json --remote
 
-      - name: Create GitHub Release (optional, for visibility)
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
+          allow_updates: true
+          fail_on_unmatched_files: false
           files: |
             prism-v${{ env.VERSION }}.tar.gz
             prism-v${{ env.VERSION }}.tar.gz.sha256
