@@ -23,6 +23,7 @@ export const devCommand = new Command("dev")
     const child = spawn("bun", ["run", "dev"], {
       stdio: "inherit",
       shell: false,
+      env: { ...process.env, PRISM_ALLOW_DIRECT: "true" },
     });
 
     child.on("exit", (code) => {
