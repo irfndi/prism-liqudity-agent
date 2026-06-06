@@ -20,6 +20,8 @@ You MAY want to (optional, for cloud features only):
 
 - ⭐ Run `prism register` (calls the deployed API, returns an API key) — only needed for `prism whoami`, Telegram bot linking, and subscription management. The CLI is fully functional without it.
 
+> **Registration is optional.** The core trading agent (scan, decide, execute) works without it. Register only if you want cloud features (Telegram bot, cross-device sync, subscription management).
+
 ```bash
 git clone https://github.com/irfndi/prism-liquidity-agent.git
 cd prism-liquidity-agent

@@ -47,5 +47,8 @@ bench/tmp-audit/
 # OpenCode internal state
 .omo/
 
+# Wrangler local state
+.wrangler/
+
 # Claude session files
 .claude/scheduled_tasks.lock

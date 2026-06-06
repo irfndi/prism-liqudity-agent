@@ -816,8 +816,8 @@ app.post("/v1/installs/ping", async (c) => {
 
     return c.json({ id });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to store install ping: ${message}` }, 500);
+    console.error("Failed to store install ping:", err);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
