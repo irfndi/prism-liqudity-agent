@@ -776,10 +776,6 @@ export const program = Effect.gen(function* () {
       const tier = revenue.calculateTier(walletSol, referralCount);
       const platformFeeRate = TIERS[tier]?.platformFeeRate ?? 0;
 
-      let remainingCredits = yield* referral.getUserCredits("local_user").pipe(
-        Effect.catchAll(() => Effect.succeed(0)),
-      );
-
       for (const [poolAddress, pos] of trackedPositions) {
         if (pos.positionPubKey && Date.now() - pos.lastFeeClaimAt > config.feeClaimIntervalMs) {
           const result = yield* adapter
@@ -802,20 +798,6 @@ export const program = Effect.gen(function* () {
             );
           if (!result) {
             continue;
-          }
-
-          if (remainingCredits > 0 && (result.platformFeeX > 0 || result.platformFeeY > 0)) {
-            const totalPlatformFee = result.platformFeeX + result.platformFeeY;
-            if (totalPlatformFee > 0) {
-              const maxDiscount = totalPlatformFee * 0.5;
-              const cappedDiscount = Math.min(remainingCredits, maxDiscount);
-              if (cappedDiscount > 0) {
-                remainingCredits -= cappedDiscount;
-                yield* referral.deductCredits("local_user", cappedDiscount, "platform_fee_discount").pipe(
-                  Effect.catchAll(() => Effect.void),
-                );
-              }
-            }
           }
 
           pos.lastFeeClaimAt = Date.now();
