@@ -2,6 +2,7 @@ import { Command } from "commander";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import readline from "readline";
 import { Keypair } from "@solana/web3.js";
 
 const WALLET_DIR = path.join(os.homedir(), ".config", "prism");
@@ -60,16 +61,37 @@ export const walletCommand = new Command("wallet")
   .addCommand(
     new Command("import")
       .description("Import an existing keypair")
-      .argument("[keypair]", "Keypair as JSON array")
+      .argument("[keypair]", "Keypair as JSON array (not recommended — visible in shell history)")
       .option("--force", "Overwrite existing wallet")
-      .action((keypairStr, options) => {
+      .option("--file <path>", "Read keypair JSON from file (secure)")
+      .option("--stdin", "Read keypair from stdin (secure, piped input)")
+      .action(async (keypairStr, options) => {
         ensureWalletDir();
         if (fs.existsSync(WALLET_FILE) && !options.force) {
           console.error("Error: Wallet already exists. Use --force to overwrite.");
           process.exit(1);
         }
+
         let secretKey: number[];
-        if (keypairStr) {
+
+        if (options.file) {
+          try {
+            const fileContent = fs.readFileSync(options.file, "utf-8");
+            secretKey = JSON.parse(fileContent);
+          } catch (err) {
+            console.error(`Error: Failed to read or parse keypair file '${options.file}'`);
+            process.exit(1);
+          }
+        } else if (options.stdin) {
+          const input = await readStdin();
+          try {
+            secretKey = JSON.parse(input);
+          } catch (err) {
+            console.error("Error: Invalid keypair JSON from stdin");
+            process.exit(1);
+          }
+        } else if (keypairStr) {
+          console.warn("⚠️  SECURITY WARNING: Providing a keypair as a CLI argument exposes it to `ps aux` and shell history. Use --file or --stdin instead.");
           try {
             secretKey = JSON.parse(keypairStr);
           } catch (err) {
@@ -77,9 +99,10 @@ export const walletCommand = new Command("wallet")
             process.exit(1);
           }
         } else {
-          console.error("Error: Keypair required");
+          console.error("Error: Keypair required. Provide via --file <path>, --stdin, or as a positional argument (not recommended).");
           process.exit(1);
         }
+
         let keypair: Keypair;
         try {
           keypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
@@ -99,3 +122,36 @@ export const walletCommand = new Command("wallet")
         console.log(`  Pubkey: ${walletData.pubkey}`);
       }),
   );
+
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (process.stdin.isTTY) {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: true,
+      });
+      rl.question("Paste keypair JSON and press Enter: ", (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      });
+      rl.on("line", () => {
+        readline.moveCursor(process.stdout, 0, -1);
+        readline.clearLine(process.stdout, 0);
+      });
+    } else {
+      let data = "";
+      process.stdin.setEncoding("utf-8");
+      process.stdin.on("data", (chunk) => {
+        data += chunk;
+      });
+      process.stdin.on("end", () => {
+        resolve(data.trim());
+      });
+      process.stdin.on("error", (err) => {
+        reject(err);
+      });
+      process.stdin.resume();
+    }
+  });
+}

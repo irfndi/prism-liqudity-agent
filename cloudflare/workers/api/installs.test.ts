@@ -38,7 +38,7 @@ describe("Install Telemetry API", () => {
       const request = buildRequest("POST", "/v1/installs/ping", {
         installId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         event: "install",
-        version: "0.0.2",
+        version: "0.0.3",
         channel: "stable",
         platform: "darwin",
       });
@@ -53,7 +53,7 @@ describe("Install Telemetry API", () => {
       const request = buildRequest("POST", "/v1/installs/ping", {
         installId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         event: "register",
-        version: "0.0.2",
+        version: "0.0.3",
         userId: "user-abc-123",
       });
       const response = await worker.fetch(request, testEnv, ctx);
@@ -116,7 +116,7 @@ describe("Install Telemetry API", () => {
       const request = buildRequest("POST", "/v1/installs/ping", {
         installId: "persist-test-install-id-aaaaaaaa",
         event: "setup",
-        version: "0.0.2",
+        version: "0.0.3",
         channel: "stable",
         platform: "linux",
       });
@@ -129,7 +129,7 @@ describe("Install Telemetry API", () => {
       expect(results).toHaveLength(1);
       const row = results[0] as Record<string, unknown>;
       expect(row.event).toBe("setup");
-      expect(row.version).toBe("0.0.2");
+      expect(row.version).toBe("0.0.3");
       expect(row.channel).toBe("stable");
       expect(row.platform).toBe("linux");
     });

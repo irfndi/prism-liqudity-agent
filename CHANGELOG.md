@@ -2,6 +2,16 @@
 
 All notable changes to Prism are documented here.
 
+## [0.0.3] — 2026-06-06
+
+### Fixed
+- Release workflow — tarball now written outside source tree to prevent "file changed as we read it" tar error (#42)
+- `prism backtest` — CLI arguments (`--days`, `--pools`, `--source`, `--db`) now correctly passed through to backtest engine
+- `prism wallet import` — added `--file <path>` and `--stdin` secure import paths; positional arg now emits a security warning
+
+### Changed
+- Bumped version to 0.0.3
+
 ## [0.0.2] — 2026-06-04
 
 ### Added

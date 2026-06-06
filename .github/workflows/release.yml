@@ -45,12 +45,11 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           TARBALL_NAME="prism-v${VERSION}.tar.gz"
           echo "Building ${TARBALL_NAME}"
-          # Exclude the archive being written and the .sha256/.asc sidecars
-          # to avoid tar's "file changed as we read it" error.
-          tar -czf "${TARBALL_NAME}" \
-            --exclude="${TARBALL_NAME}" \
-            --exclude="${TARBALL_NAME}.sha256" \
-            --exclude="${TARBALL_NAME}.asc" \
+          # Write tarball outside the source tree to prevent tar reading
+          # its own output file, which triggers "file changed as we read it".
+          mkdir -p /tmp/prism-release
+          tar -czf "/tmp/prism-release/${TARBALL_NAME}" \
+            --warning=no-file-changed \
             --exclude=node_modules \
             --exclude=dist \
             --exclude=.git \
@@ -68,6 +67,7 @@ jobs:
             --exclude=.rtk \
             --exclude=.opencode \
             .
+          cp "/tmp/prism-release/${TARBALL_NAME}" "./${TARBALL_NAME}"
           ls -lh "${TARBALL_NAME}"
 
       - name: Generate SHA-256 checksum

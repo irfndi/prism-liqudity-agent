@@ -21,7 +21,7 @@ describe("runPrism", () => {
       fakePrism,
       `#!/usr/bin/env bash
 if [ "$1" = "--version" ]; then
-  echo "prism 0.0.2 (test stub)"
+  echo "prism 0.0.3 (test stub)"
   exit 0
 fi
 if [ "$1" = "whoami" ]; then
@@ -52,7 +52,7 @@ exit 2
       assert.equal(result.exitCode, 0);
       assert.equal(result.ok, true);
       assert.equal(result.timedOut, false);
-      assert.ok(result.stdout.includes("prism 0.0.2"));
+      assert.ok(result.stdout.includes("prism 0.0.3"));
     } finally {
       if (prevBin === undefined) delete process.env.PRISM_BIN;
       else process.env.PRISM_BIN = prevBin;

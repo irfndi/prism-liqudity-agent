@@ -41,7 +41,11 @@ function parseArgs(argv: ReadonlyArray<string>): CliArgs {
     const a = argv[i];
     const next = argv[i + 1];
     if (a === "--days" && next) {
-      out.days = Number(next);
+      const parsed = Number(next);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        throw new Error(`Invalid --days value: ${next}. Must be a positive number.`);
+      }
+      out.days = parsed;
       i++;
     } else if (a === "--pools" && next) {
       out.pools = next

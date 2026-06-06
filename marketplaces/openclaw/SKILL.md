@@ -79,7 +79,7 @@ The CLI is fully functional without the cloud API. Do not assume `prism register
 ## Verify Installation
 
 ```bash
-prism --version       # should print 0.0.2 or later
+prism --version       # should print 0.0.3 or later
 prism dev &           # start engine in background
 sleep 30
 tail -n 20 logs/audit-trail.jsonl
