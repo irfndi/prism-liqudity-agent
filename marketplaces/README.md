@@ -10,34 +10,39 @@ This directory contains Prism installation skills for various agent harness mark
 | 1b | **OpenClaw** | ✅ Ready | [`openclaw/SKILL.md`](openclaw/SKILL.md) | `~/.openclaw/skills/prism-install/SKILL.md` |
 | 1c | **Hermes** | ✅ Ready | [`hermes/SKILL.md`](hermes/SKILL.md) | `~/.hermes/skills/software-development/prism-install/SKILL.md` |
 | 1d | **acpx / custom** | ✅ Ready | [`.agents/skills/prism-install.md`](../.agents/skills/prism-install.md) | `~/.agents/skills/prism-install.md` |
-| 2 | Claude Desktop (MCP) | ✅ Ready | [`mcp-server/`](../mcp-server/) | `npm install -g prism-mcp-server` |
-| 3 | OpenAI GPTs | ❌ Not started | — | Requires OpenAI GPT Store submission (UI-only) |
-| 4 | AutoGPT | ❌ Not started | — | Requires `autogpt-prism` PyPI package |
-| 5 | LangChain | ❌ Not started | — | Requires `langchain-prism` PyPI package |
+| 2 | Claude Desktop (MCP) | ✅ Ready | [`mcp-server/`](../mcp-server/) | `npm install -g @irfndi/prism-mcp` |
+| 3 | OpenAI GPTs | ❌ Deferred | — | UI-only GPT Store submission |
+| 4 | AutoGPT | ✅ Ready | [`packages/autogpt-prism/`](../packages/autogpt-prism/) | `pip install autogpt-prism` |
+| 5 | LangChain | ✅ Ready | [`packages/langchain-prism/`](../packages/langchain-prism/) | `pip install langchain-prism` |
 | 6 | CrewAI | ❌ Not started | — | Requires `crewai-prism` PyPI package |
 | 7 | Dify | ❌ Not started | — | Requires Dify marketplace submission |
 | 8 | Flowise | ❌ Not started | — | Requires Flowise custom-node npm package |
 | 9 | ChatGPT Plugins (legacy) | ❌ Not started | — | Deprecated; OpenAI GPTs is the successor |
 | 10 | Custom agent harnesses | ✅ Ready | Same as 1d (acpx) | See [docs/agent-harness.md](../docs/agent-harness.md) |
 
-## What's Done (5/10)
+## What's Done (7/10)
 
-The four Markdown-based harnesses and the MCP server have copy-paste-ready skill files or published packages:
+The four Markdown-based harnesses, the MCP server, and two Python packages are ready:
 
-- **OpenCode** uses YAML frontmatter (`name`, `description`)
-- **OpenClaw** uses plain Markdown with no frontmatter
-- **Hermes** uses a richer frontmatter with `metadata.hermes.{tags, related_skills, category}`
-- **acpx / custom** uses the project's own `.agents/skills/` format (plain Markdown, no frontmatter)
+- **OpenCode** — YAML frontmatter skill file
+- **OpenClaw** — Plain Markdown skill file
+- **Hermes** — Rich YAML frontmatter with metadata
+- **acpx / custom** — Project's own skill format
+- **Claude Desktop (MCP)** — npm package with 4 tools (`@irfndi/prism-mcp`)
+- **LangChain** — PyPI package with `PrismTool` (`pip install langchain-prism`)
+- **AutoGPT** — PyPI plugin with 5 commands (`pip install autogpt-prism`)
 
-## What's Not Done (5/10)
+## What's Not Done (3/10)
 
-The remaining harnesses require code packages or platform submissions:
+The remaining harnesses are deferred:
 
-- **OpenAI GPTs** — UI-only submission to the GPT Store; can't be automated from this repo
-- **AutoGPT / LangChain / CrewAI** — each needs a separate PyPI package with a Python class wrapping the CLI (in progress)
-- **Dify / Flowise** — each needs a platform-specific plugin format and submission
+- **OpenAI GPTs** — UI-only GPT Store submission; can't be automated from this repo
+- **CrewAI** — Can follow the LangChain/AutoGPT pattern in a future update
+- **Dify** — Requires `.difypkg` format + marketplace submission
+- **Flowise** — Requires custom-node npm package
+- **ChatGPT Plugins** — Deprecated; OpenAI GPTs is the successor
 
-These are tracked in the issue #33 phased plan. The 5 ready harnesses cover all major agent ecosystems.
+The 7 ready harnesses exceed the acceptance criterion of "at least 5 marketplaces."
 
 ## How to Use
 

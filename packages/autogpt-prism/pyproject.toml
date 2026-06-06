@@ -24,7 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = []
+dependencies = [
+    "auto-gpt-plugin-template>=0.1.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]

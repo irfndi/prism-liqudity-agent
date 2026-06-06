@@ -1,5 +1,5 @@
 {
-  "name": "prism-mcp-server",
+  "name": "@irfndi/prism-mcp",
   "version": "0.0.8",
   "description": "Model Context Protocol (MCP) server that exposes Prism liquidity agent commands as tools for Claude Desktop and other MCP clients",
   "license": "MIT",

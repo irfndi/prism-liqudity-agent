@@ -102,8 +102,24 @@ def _prism_setup(helius_key: str = "", **_kwargs: Any) -> str:
 
 
 def _prism_start(**_kwargs: Any) -> str:
-    """Start Prism in paper-trading mode (``prism dev``)."""
-    return _run_prism("dev")
+    """Start Prism in paper-trading mode (``prism dev``) as a background process."""
+    try:
+        prism = _find_prism()
+        # Start in background so AutoGPT doesn't block forever
+        proc = subprocess.Popen(
+            [prism, "dev"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return (
+            f"Prism agent started in background (PID {proc.pid}). "
+            "Use prism_status to verify it's running."
+        )
+    except FileNotFoundError as exc:
+        return str(exc)
+    except OSError as exc:
+        return f"Failed to start agent: {exc}"
 
 
 def _prism_status(**_kwargs: Any) -> str:

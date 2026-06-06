@@ -1,4 +1,4 @@
-# prism-mcp-server
+# @irfndi/prism-mcp
 
 Model Context Protocol (MCP) server that exposes Prism liquidity agent commands as tools for Claude Desktop and other MCP clients.
 
@@ -18,7 +18,7 @@ Exposes 4 tools to any MCP-compatible client (Claude Desktop, Claude Code, Curso
 ### From npm (once published)
 
 ```bash
-npm install -g prism-mcp-server
+npm install -g @irfndi/prism-mcp
 ```
 
 ### From the repo (current state)

@@ -91,7 +91,7 @@ This spawns the engine. Decisions are logged to `logs/audit-trail.jsonl`. To sto
 ## Verify Installation
 
 ```bash
-prism --version       # should print 0.0.2 or later
+prism --version       # should print 0.0.8 or later
 prism dev &           # start engine in background
 sleep 30
 tail -n 20 logs/audit-trail.jsonl   # should show scan cycle decisions
