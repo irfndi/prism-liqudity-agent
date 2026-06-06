@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autogpt-prism"
+version = "0.1.0"
+description = "AutoGPT plugin for Prism — autonomous Solana liquidity agent"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Irfan Dipta", email = "irfndi@users.noreply.github.com"},
+]
+keywords = ["autogpt", "plugin", "prism", "solana", "defi", "liquidity"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.entry-points."autogpt.plugins"]
+prism = "autogpt_prism:AutoGPTPrism"
+
+[tool.setuptools.packages.find]
+include = ["autogpt_prism*"]

@@ -5,7 +5,7 @@ import { registerAllTools } from "./tools.js";
 
 const server = new McpServer({
   name: "prism-mcp-server",
-  version: "0.0.3",
+  version: "0.0.8",
 });
 
 registerAllTools(server);
