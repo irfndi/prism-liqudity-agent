@@ -5,6 +5,7 @@ import { DbLive } from "../engine/db-service.js";
 import { DbService } from "../engine/services.js";
 import {
   computeSummary,
+  computePnl,
   formatAge,
   toJsonOutput,
   toHistoryJsonOutput,
@@ -33,7 +34,31 @@ function makePosition(overrides: Partial<PositionRecord> = {}): PositionRecord {
   };
 }
 
-// ─── computeSummary ────────────────────────────────────────────────────────
+describe("computePnl", () => {
+  it("computes profit correctly", () => {
+    const { pnlUsd, pnlPct } = computePnl(1000, 1200);
+    expect(pnlUsd).toBe(200);
+    expect(pnlPct).toBe(20);
+  });
+
+  it("computes loss correctly", () => {
+    const { pnlUsd, pnlPct } = computePnl(1000, 800);
+    expect(pnlUsd).toBe(-200);
+    expect(pnlPct).toBe(-20);
+  });
+
+  it("handles break-even", () => {
+    const { pnlUsd, pnlPct } = computePnl(1000, 1000);
+    expect(pnlUsd).toBe(0);
+    expect(pnlPct).toBe(0);
+  });
+
+  it("handles zero deposited", () => {
+    const { pnlUsd, pnlPct } = computePnl(0, 100);
+    expect(pnlUsd).toBe(100);
+    expect(pnlPct).toBe(0);
+  });
+});
 
 describe("computeSummary", () => {
   it("returns zeros for empty positions", () => {
@@ -83,8 +108,6 @@ describe("computeSummary", () => {
   });
 });
 
-// ─── formatAge ─────────────────────────────────────────────────────────────
-
 describe("formatAge", () => {
   it("returns minutes for recent timestamps", () => {
     const ts = Date.now() - 5 * 60 * 1000; // 5 minutes ago
@@ -111,8 +134,6 @@ describe("formatAge", () => {
     expect(formatAge(ts)).toBe("0m");
   });
 });
-
-// ─── toJsonOutput ──────────────────────────────────────────────────────────
 
 describe("toJsonOutput", () => {
   it("produces correct JSON structure for active positions", () => {
@@ -169,8 +190,6 @@ describe("toJsonOutput", () => {
   });
 });
 
-// ─── toHistoryJsonOutput ───────────────────────────────────────────────────
-
 describe("toHistoryJsonOutput", () => {
   it("produces correct JSON structure for exited positions", () => {
     const positions = [
@@ -203,8 +222,6 @@ describe("toHistoryJsonOutput", () => {
     expect(json.positions).toHaveLength(0);
   });
 });
-
-// ─── DB integration tests ──────────────────────────────────────────────────
 
 describe("portfolio — DB integration", () => {
   function buildLayer() {

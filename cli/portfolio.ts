@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { Effect, Layer } from "effect";
+import { ConfigLive } from "../engine/config-service.js";
 import { DbLive } from "../engine/db-service.js";
 import { DbService } from "../engine/services.js";
 import type { PositionRecord } from "../engine/db-service.js";
@@ -8,7 +9,7 @@ import { createLogger } from "../engine/logger.js";
 const logger = createLogger("portfolio-cli");
 
 function buildProgram(): Layer.Layer<DbService, never, never> {
-  return DbLive(process.env.SQLITE_DB_PATH);
+  return Layer.provide(DbLive(), ConfigLive);
 }
 
 export interface PortfolioSummary {
@@ -48,9 +49,14 @@ function formatPct(value: number): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+export function computePnl(depositedUsd: number, currentValueUsd: number): { pnlUsd: number; pnlPct: number } {
+  const pnlUsd = currentValueUsd - depositedUsd;
+  const pnlPct = depositedUsd > 0 ? (pnlUsd / depositedUsd) * 100 : 0;
+  return { pnlUsd, pnlPct };
+}
+
 function formatPosition(pos: PositionRecord): string {
-  const pnlUsd = pos.currentValueUsd - pos.depositedUsd;
-  const pnlPct = pos.depositedUsd > 0 ? (pnlUsd / pos.depositedUsd) * 100 : 0;
+  const { pnlUsd, pnlPct } = computePnl(pos.depositedUsd, pos.currentValueUsd);
   const pnlColor = pnlUsd >= 0 ? "\x1b[32m" : "\x1b[31m";
   const reset = "\x1b[0m";
 
@@ -125,8 +131,7 @@ function formatHistoryList(positions: ReadonlyArray<PositionRecord>): string {
   lines.push("=".repeat(40));
 
   for (const pos of positions) {
-    const pnlUsd = pos.currentValueUsd - pos.depositedUsd;
-    const pnlPct = pos.depositedUsd > 0 ? (pnlUsd / pos.depositedUsd) * 100 : 0;
+    const { pnlUsd, pnlPct } = computePnl(pos.depositedUsd, pos.currentValueUsd);
     const pnlColor = pnlUsd >= 0 ? "\x1b[32m" : "\x1b[31m";
     const reset = "\x1b[0m";
 
@@ -135,7 +140,7 @@ function formatHistoryList(positions: ReadonlyArray<PositionRecord>): string {
     lines.push(`    Deposited:  ${formatCurrency(pos.depositedUsd)}`);
     lines.push(`    Exit Value: ${formatCurrency(pos.currentValueUsd)}`);
     lines.push(`    Realized P&L: ${pnlColor}${formatCurrency(pnlUsd)} (${formatPct(pnlPct)})${reset}`);
-    lines.push(`    Exited:     ${new Date(pos.paperExitedAt ?? 0).toISOString()}`);
+    lines.push(`    Exited:     ${pos.paperExitedAt ? new Date(pos.paperExitedAt).toISOString() : "N/A"}`);
     lines.push("");
   }
 
@@ -164,8 +169,7 @@ export interface PortfolioJsonOutput {
 export function toJsonOutput(positions: ReadonlyArray<PositionRecord>): PortfolioJsonOutput {
   return {
     positions: positions.map((pos) => {
-      const pnlUsd = pos.currentValueUsd - pos.depositedUsd;
-      const pnlPct = pos.depositedUsd > 0 ? (pnlUsd / pos.depositedUsd) * 100 : 0;
+      const { pnlUsd, pnlPct } = computePnl(pos.depositedUsd, pos.currentValueUsd);
       return {
         poolAddress: pos.poolAddress,
         poolName: `${pos.tokenXSymbol}/${pos.tokenYSymbol}`,
@@ -201,8 +205,7 @@ export interface HistoryJsonOutput {
 export function toHistoryJsonOutput(positions: ReadonlyArray<PositionRecord>): HistoryJsonOutput {
   return {
     positions: positions.map((pos) => {
-      const pnlUsd = pos.currentValueUsd - pos.depositedUsd;
-      const pnlPct = pos.depositedUsd > 0 ? (pnlUsd / pos.depositedUsd) * 100 : 0;
+      const { pnlUsd, pnlPct } = computePnl(pos.depositedUsd, pos.currentValueUsd);
       return {
         poolAddress: pos.poolAddress,
         poolName: `${pos.tokenXSymbol}/${pos.tokenYSymbol}`,
