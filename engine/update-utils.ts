@@ -103,9 +103,7 @@ export function fetchGitHubRelease(
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = yield* Effect.tryPromise(() =>
-      fetch(url, { headers }),
-    );
+    const response = yield* Effect.tryPromise(() => fetch(url, { headers }));
 
     if (response.status === 403 || response.status === 429) {
       const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");

@@ -81,6 +81,7 @@ export interface AdapterApi {
       platformFeeY: number;
       netFeeX: number;
       netFeeY: number;
+      feeTransferTxSignature?: string;
     },
     unknown
   >;
@@ -97,6 +98,17 @@ export interface AdapterApi {
     }>,
     unknown
   >;
+  readonly reportFeeCollection: (event: {
+    poolAddress: string;
+    positionPubkey: string;
+    feeX: number;
+    feeY: number;
+    platformFeeX: number;
+    platformFeeY: number;
+    tier: string;
+    txSignature: string;
+    feeTransferTxSignature?: string;
+  }) => void;
 }
 
 export class AdapterService extends Context.Tag("AdapterService")<AdapterService, AdapterApi>() {}
@@ -420,7 +432,10 @@ export interface DbApi {
     reportedAt: number;
     hash: string;
   }) => Effect.Effect<void, unknown>;
-  readonly getFeedbackByHash: (hash: string, agentId: string) => Effect.Effect<
+  readonly getFeedbackByHash: (
+    hash: string,
+    agentId: string,
+  ) => Effect.Effect<
     {
       id: string;
       agentId: string;
@@ -558,7 +573,9 @@ export class FeedbackService extends Context.Tag("FeedbackService")<
 
 export interface ReferralApi {
   readonly generateCode: (userId: string) => Effect.Effect<string, Error>;
-  readonly validateCode: (code: string) => Effect.Effect<{ valid: boolean; referrerId?: string }, Error>;
+  readonly validateCode: (
+    code: string,
+  ) => Effect.Effect<{ valid: boolean; referrerId?: string }, Error>;
   readonly applyReferral: (code: string, refereeId: string) => Effect.Effect<void, Error>;
   readonly getReferralCount: (userId: string) => Effect.Effect<number, Error>;
 }
@@ -581,7 +598,4 @@ export interface RevenueApi {
   readonly calculateCreditDiscount: (credits: number, feeUsd: number) => number;
 }
 
-export class RevenueService extends Context.Tag("RevenueService")<
-  RevenueService,
-  RevenueApi
->() {}
+export class RevenueService extends Context.Tag("RevenueService")<RevenueService, RevenueApi>() {}

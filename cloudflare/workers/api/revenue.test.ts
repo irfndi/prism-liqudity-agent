@@ -1,0 +1,194 @@
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { env, createExecutionContext } from "cloudflare:test";
+import worker, { type Env } from "./index";
+
+const ADMIN_KEY = "test-admin-key-123";
+
+function buildRequest(
+  method: string,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Request {
+  const init: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json", ...headers },
+  };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  return new Request(`https://example.com${path}`, init);
+}
+
+function withAdmin(req: Request): Request {
+  return new Request(req.url, {
+    method: req.method,
+    headers: { ...Object.fromEntries(req.headers), Authorization: `Bearer ${ADMIN_KEY}` },
+    body: req.body,
+  });
+}
+
+describe("Revenue Tracking API", () => {
+  const testEnv = { ...env, ADMIN_API_KEY: ADMIN_KEY } as unknown as Env;
+
+  beforeAll(async () => {
+    await env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS revenue_events (
+        id TEXT PRIMARY KEY,
+        pool_address TEXT NOT NULL,
+        position_pubkey TEXT,
+        fee_x REAL NOT NULL DEFAULT 0,
+        fee_y REAL NOT NULL DEFAULT 0,
+        platform_fee_x REAL NOT NULL DEFAULT 0,
+        platform_fee_y REAL NOT NULL DEFAULT 0,
+        tier TEXT NOT NULL DEFAULT 'free',
+        user_id TEXT,
+        install_id TEXT,
+        tx_signature TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ).run();
+    await env.DB.prepare(
+      `ALTER TABLE revenue_events ADD COLUMN fee_transfer_tx_signature TEXT`,
+    ).run();
+  });
+
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM revenue_events").run();
+  });
+
+  // ── POST /v1/revenue/log ────────────────────────────────────────────────
+
+  describe("POST /v1/revenue/log", () => {
+    it("stores a revenue event in D1", async () => {
+      const ctx = createExecutionContext();
+      const request = buildRequest("POST", "/v1/revenue/log", {
+        poolAddress: "5JvD1TW5nqSz6gJtHfVnZKq3fZmBnL5xY7u9dR2wT4k",
+        platformFeeX: 1.5,
+        platformFeeY: 2.3,
+        feeX: 10.0,
+        feeY: 15.0,
+        tier: "pro",
+        positionPubkey: "PosK11111111111111111111111111111111111111",
+        userId: "user-001",
+        installId: "inst-001",
+        txSignature: "sig123abc",
+      });
+      const response = await worker.fetch(request, testEnv, ctx);
+      expect(response.status).toBe(200);
+
+      const body = (await response.json()) as { id: string };
+      expect(body.id).toBeTruthy();
+
+      // Verify stored in D1
+      const rows = await env.DB.prepare(
+        "SELECT pool_address, platform_fee_x, platform_fee_y, tier FROM revenue_events WHERE id = ?",
+      )
+        .bind(body.id)
+        .all();
+      const results = rows.results ?? [];
+      expect(results).toHaveLength(1);
+      const row = results[0] as Record<string, unknown>;
+      expect(row.pool_address).toBe("5JvD1TW5nqSz6gJtHfVnZKq3fZmBnL5xY7u9dR2wT4k");
+      expect(row.platform_fee_x).toBe(1.5);
+      expect(row.platform_fee_y).toBe(2.3);
+      expect(row.tier).toBe("pro");
+    });
+
+    it("returns 400 on missing required fields", async () => {
+      const ctx = createExecutionContext();
+      // Missing poolAddress
+      const request1 = buildRequest("POST", "/v1/revenue/log", {
+        platformFeeX: 1.0,
+        platformFeeY: 2.0,
+      });
+      const response1 = await worker.fetch(request1, testEnv, ctx);
+      expect(response1.status).toBe(400);
+
+      // Missing platformFeeX
+      const request2 = buildRequest("POST", "/v1/revenue/log", {
+        poolAddress: "5JvD1TW5nqSz6gJtHfVnZKq3fZmBnL5xY7u9dR2wT4k",
+        platformFeeY: 2.0,
+      });
+      const response2 = await worker.fetch(request2, testEnv, ctx);
+      expect(response2.status).toBe(400);
+
+      // Empty body
+      const request3 = buildRequest("POST", "/v1/revenue/log", {});
+      const response3 = await worker.fetch(request3, testEnv, ctx);
+      expect(response3.status).toBe(400);
+    });
+
+    it("defaults optional fields when not provided", async () => {
+      const ctx = createExecutionContext();
+      const request = buildRequest("POST", "/v1/revenue/log", {
+        poolAddress: "5JvD1TW5nqSz6gJtHfVnZKq3fZmBnL5xY7u9dR2wT4k",
+        platformFeeX: 0.5,
+        platformFeeY: 0.8,
+      });
+      const response = await worker.fetch(request, testEnv, ctx);
+      expect(response.status).toBe(200);
+
+      const body = (await response.json()) as { id: string };
+      const rows = await env.DB.prepare(
+        "SELECT fee_x, fee_y, tier, user_id FROM revenue_events WHERE id = ?",
+      )
+        .bind(body.id)
+        .all();
+      const results = rows.results ?? [];
+      expect(results).toHaveLength(1);
+      const row = results[0] as Record<string, unknown>;
+      expect(row.fee_x).toBe(0);
+      expect(row.fee_y).toBe(0);
+      expect(row.tier).toBe("free");
+      expect(row.user_id).toBeNull();
+    });
+  });
+
+  // ── GET /v1/revenue ─────────────────────────────────────────────────────
+
+  describe("GET /v1/revenue", () => {
+    it("returns 401 without admin key", async () => {
+      const ctx = createExecutionContext();
+      const request = buildRequest("GET", "/v1/revenue");
+      const response = await worker.fetch(request, testEnv, ctx);
+      expect(response.status).toBe(401);
+    });
+
+    it("returns revenue stats for admin", async () => {
+      // Seed test data
+      await env.DB.prepare(
+        `INSERT INTO revenue_events (id, pool_address, platform_fee_x, platform_fee_y, tier, user_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind("rev-1", "PoolA", 1.0, 2.0, "free", "user-1")
+        .run();
+      await env.DB.prepare(
+        `INSERT INTO revenue_events (id, pool_address, platform_fee_x, platform_fee_y, tier, user_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind("rev-2", "PoolA", 3.0, 4.0, "pro", "user-2")
+        .run();
+      await env.DB.prepare(
+        `INSERT INTO revenue_events (id, pool_address, platform_fee_x, platform_fee_y, tier, user_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind("rev-3", "PoolB", 5.0, 6.0, "pro", "user-3")
+        .run();
+
+      const ctx = createExecutionContext();
+      const request = withAdmin(buildRequest("GET", "/v1/revenue"));
+      const response = await worker.fetch(request, testEnv, ctx);
+      expect(response.status).toBe(200);
+
+      const body = (await response.json()) as {
+        total: number;
+        byTier: Array<{ tier: string; count: number; totalFee: number }>;
+        recent: Array<{ id: string; pool_address: string }>;
+      };
+      expect(body.total).toBe(3);
+      expect(body.byTier).toHaveLength(2);
+      expect(body.recent.length).toBe(3);
+    });
+  });
+});

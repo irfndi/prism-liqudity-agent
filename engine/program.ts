@@ -370,7 +370,8 @@ export const program = Effect.gen(function* () {
         const lastRebal = pos?.lastRebalanceAt ?? 0;
         const timeSinceRebal = Date.now() - lastRebal;
 
-        const oorGraceExpired = hasPosition && pos && pos.oorCycleCount >= config.oorGracePeriodCycles;
+        const oorGraceExpired =
+          hasPosition && pos && pos.oorCycleCount >= config.oorGracePeriodCycles;
 
         if (
           hasPosition &&
@@ -548,7 +549,8 @@ export const program = Effect.gen(function* () {
     Effect.gen(function* () {
       if (decision.action === "ENTER" && decision.positionSizeUsd) {
         const existing = trackedPositions.get(decision.poolAddress);
-        const liveExited = existing && existing.paperExitedAt !== null && existing.positionPubKey !== null;
+        const liveExited =
+          existing && existing.paperExitedAt !== null && existing.positionPubKey !== null;
         const pos: PositionRecord = {
           poolAddress: decision.poolAddress,
           positionPubKey: liveExited ? existing!.positionPubKey : null,
@@ -718,10 +720,37 @@ export const program = Effect.gen(function* () {
       } else if (decision.action === "REBALANCE" && decision.rebalanceParams) {
         const pos = trackedPositions.get(decision.poolAddress);
         if (pos?.positionPubKey) {
-          // Claim fees before rebalancing
-          yield* adapter
-            .claimFees(decision.poolAddress, pos.positionPubKey)
+          // Compute tier and platform fee rate for revenue collection
+          const walletBalance = yield* adapter
+            .getNativeSolBalance()
+            .pipe(Effect.catchAll(() => Effect.succeed(0)));
+          const walletSol = Number(walletBalance) / LAMPORTS_PER_SOL;
+          const referralCount = yield* referral
+            .getReferralCount("local_user")
+            .pipe(Effect.catchAll(() => Effect.succeed(0)));
+          const tier = revenue.calculateTier(walletSol, referralCount);
+          const platformFeeRate = TIERS[tier]?.platformFeeRate ?? 0;
+
+          // Claim fees before rebalancing (with platform fee)
+          const claimResult = yield* adapter
+            .claimFees(decision.poolAddress, pos.positionPubKey, platformFeeRate)
             .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+          if (claimResult && (claimResult.platformFeeX > 0 || claimResult.platformFeeY > 0)) {
+            adapter.reportFeeCollection({
+              poolAddress: decision.poolAddress,
+              positionPubkey: pos.positionPubKey,
+              feeX: claimResult.feeX,
+              feeY: claimResult.feeY,
+              platformFeeX: claimResult.platformFeeX,
+              platformFeeY: claimResult.platformFeeY,
+              tier,
+              txSignature: claimResult.txSignature,
+              ...(claimResult.feeTransferTxSignature != null && {
+                feeTransferTxSignature: claimResult.feeTransferTxSignature,
+              }),
+            });
+          }
 
           const result = yield* adapter
             .rebalancePosition(
@@ -771,14 +800,14 @@ export const program = Effect.gen(function* () {
 
   const claimAllFees = (): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const walletBalance = yield* adapter.getNativeSolBalance().pipe(
-        Effect.catchAll(() => Effect.succeed(0)),
-      );
+      const walletBalance = yield* adapter
+        .getNativeSolBalance()
+        .pipe(Effect.catchAll(() => Effect.succeed(0)));
       const walletSol = Number(walletBalance) / LAMPORTS_PER_SOL;
 
-      const referralCount = yield* referral.getReferralCount("local_user").pipe(
-        Effect.catchAll(() => Effect.succeed(0)),
-      );
+      const referralCount = yield* referral
+        .getReferralCount("local_user")
+        .pipe(Effect.catchAll(() => Effect.succeed(0)));
       const tier = revenue.calculateTier(walletSol, referralCount);
       const platformFeeRate = TIERS[tier]?.platformFeeRate ?? 0;
 
@@ -804,6 +833,22 @@ export const program = Effect.gen(function* () {
             );
           if (!result) {
             continue;
+          }
+
+          if (result.platformFeeX > 0 || result.platformFeeY > 0) {
+            adapter.reportFeeCollection({
+              poolAddress,
+              positionPubkey: pos.positionPubKey,
+              feeX: result.feeX,
+              feeY: result.feeY,
+              platformFeeX: result.platformFeeX,
+              platformFeeY: result.platformFeeY,
+              tier,
+              txSignature: result.txSignature,
+              ...(result.feeTransferTxSignature != null && {
+                feeTransferTxSignature: result.feeTransferTxSignature,
+              }),
+            });
           }
 
           pos.lastFeeClaimAt = Date.now();

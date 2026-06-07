@@ -39,28 +39,36 @@ export const BlacklistLive = (opts: {
           checkPool(poolAddress, tokenXMint, tokenYMint, tokenXDeployer, tokenYDeployer) {
             return Effect.gen(function* () {
               if (isTokenBlacklisted(tokenXMint)) {
-                return yield* Effect.fail(new BlacklistError({
-                  message: `Token X ${tokenXMint} is blacklisted`,
-                  poolAddress,
-                }));
+                return yield* Effect.fail(
+                  new BlacklistError({
+                    message: `Token X ${tokenXMint} is blacklisted`,
+                    poolAddress,
+                  }),
+                );
               }
               if (isTokenBlacklisted(tokenYMint)) {
-                return yield* Effect.fail(new BlacklistError({
-                  message: `Token Y ${tokenYMint} is blacklisted`,
-                  poolAddress,
-                }));
+                return yield* Effect.fail(
+                  new BlacklistError({
+                    message: `Token Y ${tokenYMint} is blacklisted`,
+                    poolAddress,
+                  }),
+                );
               }
               if (tokenXDeployer && isDeployerBlacklisted(tokenXDeployer)) {
-                return yield* Effect.fail(new BlacklistError({
-                  message: `Token X deployer ${tokenXDeployer} is blacklisted`,
-                  poolAddress,
-                }));
+                return yield* Effect.fail(
+                  new BlacklistError({
+                    message: `Token X deployer ${tokenXDeployer} is blacklisted`,
+                    poolAddress,
+                  }),
+                );
               }
               if (tokenYDeployer && isDeployerBlacklisted(tokenYDeployer)) {
-                return yield* Effect.fail(new BlacklistError({
-                  message: `Token Y deployer ${tokenYDeployer} is blacklisted`,
-                  poolAddress,
-                }));
+                return yield* Effect.fail(
+                  new BlacklistError({
+                    message: `Token Y deployer ${tokenYDeployer} is blacklisted`,
+                    poolAddress,
+                  }),
+                );
               }
               return;
             });

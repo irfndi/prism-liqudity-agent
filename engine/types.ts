@@ -143,3 +143,41 @@ export interface BacktestResult {
   winRate: number;
   sharpeRatio: number;
 }
+
+// ─── Revenue ────────────────────────────────────────────────────────────────
+
+export interface FeeWalletResponse {
+  address: string;
+  source: "kv" | "env";
+}
+
+export interface RevenueLogRequest {
+  poolAddress: string;
+  positionPubkey: string;
+  feeX: number;
+  feeY: number;
+  platformFeeX: number;
+  platformFeeY: number;
+  tier: string;
+  txSignature: string;
+  userId?: string;
+  installId?: string;
+}
+
+export interface RevenueLogResponse {
+  id: string;
+}
+
+export interface RevenueStatsResponse {
+  totalEvents: number;
+  totalPlatformFeeUsd: number;
+  byTier: Record<string, { count: number; totalFeeUsd: number }>;
+  recentEvents: Array<{
+    id: string;
+    poolAddress: string;
+    tier: string;
+    platformFeeX: number;
+    platformFeeY: number;
+    createdAt: string;
+  }>;
+}

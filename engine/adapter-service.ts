@@ -1,4 +1,9 @@
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+} from "@solana/spl-token";
 import DLMM from "@meteora-ag/dlmm";
 import { BN } from "@coral-xyz/anchor";
 import { Context, Effect, Layer } from "effect";
@@ -7,9 +12,46 @@ import { ConfigService } from "./config-service.js";
 import { AdapterError } from "./errors.js";
 import type { BinArray, BinData, PoolState, Position } from "./types.js";
 import bs58 from "bs58";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { randomUUID } from "crypto";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+// ─── Install ID helper (engine-safe mirror of cli/install-id.ts) ───────────
+
+const INSTALL_ID_FILE = path.join(os.homedir(), ".config", "prism", "install-id");
+let cachedInstallId: string | null = null;
+
+function getOrCreateInstallId(): string {
+  if (cachedInstallId) return cachedInstallId;
+  try {
+    if (fs.existsSync(INSTALL_ID_FILE)) {
+      const existing = fs.readFileSync(INSTALL_ID_FILE, "utf-8").trim();
+      if (existing.length >= 8 && existing.length <= 128) {
+        cachedInstallId = existing;
+        return cachedInstallId;
+      }
+    }
+  } catch {
+    // fall through to generate
+  }
+  const id = randomUUID();
+  try {
+    const dir = path.dirname(INSTALL_ID_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+    fs.writeFileSync(INSTALL_ID_FILE, id, { mode: 0o600 });
+    fs.chmodSync(INSTALL_ID_FILE, 0o600);
+  } catch {
+    // keep in memory for this session even if persistence failed
+  }
+  cachedInstallId = id;
+  return id;
+}
 
 export const AdapterLive = Layer.effect(
   AdapterService,
@@ -25,6 +67,40 @@ export const AdapterLive = Layer.effect(
       } catch (err) {
         console.error("Failed to load wallet", err);
       }
+    }
+
+    // ─── Fee wallet address (cached) ────────────────────────────────────────
+
+    let cachedFeeWallet: { address: string; expiresAt: number } | null = null;
+    const FEE_WALLET_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+    function fetchFeeWalletAddress(): Effect.Effect<string, never> {
+      return Effect.gen(function* () {
+        // Return cached if valid
+        if (cachedFeeWallet && Date.now() < cachedFeeWallet.expiresAt) {
+          return cachedFeeWallet.address;
+        }
+
+        // Try API
+        if (config.feeWalletApiUrl) {
+          const res = yield* Effect.tryPromise(() =>
+            fetch(`${config.feeWalletApiUrl}/v1/fee-wallet`),
+          );
+          if (res.ok) {
+            const data = (yield* Effect.tryPromise(() => res.json())) as { address?: string };
+            if (data.address) {
+              cachedFeeWallet = {
+                address: data.address,
+                expiresAt: Date.now() + FEE_WALLET_CACHE_TTL_MS,
+              };
+              return data.address;
+            }
+          }
+        }
+
+        // Fallback to env var
+        return config.feeWalletAddress;
+      }).pipe(Effect.catchAll(() => Effect.succeed(config.feeWalletAddress)));
     }
 
     // ─── Token metadata cache ──────────────────────────────────────────────
@@ -697,6 +773,7 @@ export const AdapterLive = Layer.effect(
             let platformFeeY = 0;
             let netFeeX = feeX;
             let netFeeY = feeY;
+            let feeTransferTxSignature: string | undefined;
 
             if (platformFeeRate && platformFeeRate > 0 && platformFeeRate <= 1) {
               platformFeeX = feeX * platformFeeRate;
@@ -704,7 +781,79 @@ export const AdapterLive = Layer.effect(
               netFeeX = feeX - platformFeeX;
               netFeeY = feeY - platformFeeY;
 
-              // TODO: Send platform fee to FEE_WALLET_ADDRESS (requires additional transaction)
+              if (platformFeeX > 0 || platformFeeY > 0) {
+                const feeWallet = yield* fetchFeeWalletAddress();
+                if (!feeWallet) {
+                  console.warn("No fee wallet configured — skipping platform fee transfer", {
+                    pool: poolAddress,
+                  });
+                } else {
+                  try {
+                    const feeWalletPubkey = new PublicKey(feeWallet);
+                    const tokenXMint = dlmm.lbPair.tokenXMint as PublicKey;
+                    const tokenYMint = dlmm.lbPair.tokenYMint as PublicKey;
+                    const { blockhash } = yield* Effect.tryPromise(() =>
+                      connection.getLatestBlockhash(),
+                    );
+                    const transferTx = new Transaction();
+                    transferTx.feePayer = wallet.publicKey;
+                    transferTx.recentBlockhash = blockhash;
+
+                    const mints: Array<[PublicKey, number]> = [
+                      [tokenXMint, platformFeeX],
+                      [tokenYMint, platformFeeY],
+                    ];
+
+                    for (const [mint, amount] of mints) {
+                      if (amount < 1) continue;
+                      const fromAta = yield* Effect.tryPromise(() =>
+                        getAssociatedTokenAddress(mint, wallet!.publicKey),
+                      );
+                      const toAta = yield* Effect.tryPromise(() =>
+                        getAssociatedTokenAddress(mint, feeWalletPubkey),
+                      );
+                      // Check if destination ATA exists
+                      const toAtaInfo = yield* Effect.tryPromise(() =>
+                        connection.getAccountInfo(toAta),
+                      );
+                      if (!toAtaInfo) {
+                        transferTx.add(
+                          createAssociatedTokenAccountInstruction(
+                            wallet!.publicKey,
+                            toAta,
+                            feeWalletPubkey,
+                            mint,
+                          ),
+                        );
+                      }
+                      transferTx.add(
+                        createTransferInstruction(
+                          fromAta,
+                          toAta,
+                          wallet!.publicKey,
+                          BigInt(Math.floor(amount)),
+                        ),
+                      );
+                    }
+
+                    transferTx.sign(wallet!);
+                    const sig = yield* Effect.tryPromise(() =>
+                      connection.sendRawTransaction(transferTx.serialize(), {
+                        skipPreflight: false,
+                      }),
+                    );
+                    yield* Effect.tryPromise(() => connection.confirmTransaction(sig, "confirmed"));
+                    feeTransferTxSignature = sig;
+                  } catch (err) {
+                    console.error("Platform fee transfer failed (fees retained by user)", {
+                      pool: poolAddress,
+                      platformFeeX,
+                      platformFeeY,
+                      error: String(err),
+                    });
+                  }
+                }
+              }
             }
 
             return {
@@ -715,6 +864,7 @@ export const AdapterLive = Layer.effect(
               platformFeeY,
               netFeeX,
               netFeeY,
+              ...(feeTransferTxSignature !== undefined ? { feeTransferTxSignature } : {}),
             };
           } catch (err) {
             return yield* Effect.fail(
@@ -726,6 +876,23 @@ export const AdapterLive = Layer.effect(
             );
           }
         }),
+
+      reportFeeCollection(event) {
+        if (!config.feeWalletApiUrl) return;
+        void (async () => {
+          try {
+            const installId = getOrCreateInstallId();
+            const res = await fetch(`${config.feeWalletApiUrl}/v1/revenue/log`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...event, installId }),
+            });
+            if (!res.ok) console.warn("Revenue report failed:", res.status);
+          } catch (err) {
+            console.warn("Revenue report failed:", String(err));
+          }
+        })();
+      },
 
       discoverPools: () =>
         Effect.gen(function* () {

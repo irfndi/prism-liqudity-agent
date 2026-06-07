@@ -9,6 +9,7 @@
         "@effect/platform": "^0.96.1",
         "@effect/platform-node": "^0.106.0",
         "@meteora-ag/dlmm": "^1.9.10",
+        "@solana/spl-token": "^0.4.14",
         "@solana/web3.js": "^1.98.4",
         "@xenova/transformers": "^2.17.2",
         "chalk": "^5.6.2",
@@ -22,7 +23,7 @@
         "@types/node": "^25.9.1",
         "@types/semver": "^7.7.1",
         "@vitest/coverage-v8": "^4.1.8",
-        "bun-types": "^1.2.0",
+        "bun-types": "1.4.0-canary.20260519T150915",
         "oxfmt": "^0.53.0",
         "oxlint": "^1.68.0",
         "tsdown": "^0.22.0",
@@ -392,7 +393,7 @@
 
     "bufferutil": ["bufferutil@4.1.0", "", { "dependencies": { "node-gyp-build": "^4.3.0" } }, "sha512-ZMANVnAixE6AWWnPzlW2KpUrxhm9woycYvPOo67jWHyFowASTEd9s+QN1EIMsSDtwhIxN4sWE1jotpuDUIgyIw=="],
 
-    "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
+    "bun-types": ["bun-types@1.4.0-canary.20260519T150915", "", { "dependencies": { "@types/node": "*" } }, "sha512-Wz9GvDClQ8quNXqvtm1QgDu20/Mj4x1qtJZlnczSMVPmGtdA16P06I2kxReuRafNu9UWya+mvrLVUGtz3NWNNw=="],
 
     "bytes": ["bytes@3.1.2", "", {}, "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg=="],
 

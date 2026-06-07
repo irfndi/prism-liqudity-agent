@@ -15,22 +15,13 @@ const TIER_INFO: Record<
     name: "Free",
     maxProfit: "1 SOL/month",
     monthlyFee: "0 SOL",
-    features: [
-      "Paper trading",
-      "Basic pool monitoring",
-      "Community support",
-    ],
+    features: ["Paper trading", "Basic pool monitoring", "Community support"],
   },
   pro: {
     name: "Pro",
     maxProfit: "10 SOL/month",
     monthlyFee: "0.5 SOL",
-    features: [
-      "Live trading",
-      "Advanced analytics",
-      "Priority support",
-      "10% performance fee",
-    ],
+    features: ["Live trading", "Advanced analytics", "Priority support", "10% performance fee"],
   },
   fund: {
     name: "Fund",
@@ -61,41 +52,41 @@ function getCredentials() {
 export const subscriptionCommand = new Command("subscription")
   .description("Manage subscription")
   .addCommand(
-    new Command("status")
-      .description("Show current tier and usage")
-      .action(async () => {
-        const creds = getCredentials();
-        if (!creds) {
-          console.error("Error: Not registered. Run 'prism register' first.");
-          process.exit(1);
-        }
+    new Command("status").description("Show current tier and usage").action(async () => {
+      const creds = getCredentials();
+      if (!creds) {
+        console.error("Error: Not registered. Run 'prism register' first.");
+        process.exit(1);
+      }
 
-        const result = await prismApiGet<{
-          tier: string;
-          walletSol: number;
-          referralCount: number;
-          credits: number;
-          platformFeeRate: number;
-        }>("/v1/subscription/status", { apiKey: creds.apiKey });
+      const result = await prismApiGet<{
+        tier: string;
+        walletSol: number;
+        referralCount: number;
+        credits: number;
+        platformFeeRate: number;
+      }>("/v1/subscription/status", { apiKey: creds.apiKey });
 
-        if (!result.ok || !result.data) {
-          console.error("Error: Failed to fetch subscription status");
-          if (result.error) console.error(`  ${result.error}`);
-          process.exit(1);
-        }
+      if (!result.ok || !result.data) {
+        console.error("Error: Failed to fetch subscription status");
+        if (result.error) console.error(`  ${result.error}`);
+        process.exit(1);
+      }
 
-        const { tier, walletSol, referralCount, credits, platformFeeRate } = result.data;
-        const info = TIER_INFO[tier] ?? TIER_INFO.free;
+      const { tier, walletSol, referralCount, credits, platformFeeRate } = result.data;
+      const info = TIER_INFO[tier] ?? TIER_INFO.free;
 
-        console.log(`Tier: ${info.name}`);
-        console.log(`Wallet: ${walletSol.toFixed(2)} SOL`);
-        console.log(`Referrals: ${referralCount}`);
-        console.log(`Credits: $${credits}`);
-        console.log(`Platform fee: ${(platformFeeRate * 100).toFixed(0)}%`);
-        console.log("");
-        console.log("Features:");
-        info.features.forEach((f) => { console.log(`  • ${f}`); });
-      }),
+      console.log(`Tier: ${info.name}`);
+      console.log(`Wallet: ${walletSol.toFixed(2)} SOL`);
+      console.log(`Referrals: ${referralCount}`);
+      console.log(`Credits: $${credits}`);
+      console.log(`Platform fee: ${(platformFeeRate * 100).toFixed(0)}%`);
+      console.log("");
+      console.log("Features:");
+      info.features.forEach((f) => {
+        console.log(`  • ${f}`);
+      });
+    }),
   )
   .addCommand(
     new Command("upgrade")
@@ -119,7 +110,9 @@ export const subscriptionCommand = new Command("subscription")
         console.log(`Monthly fee: ${info.monthlyFee}`);
         console.log("");
         console.log("Features:");
-        info.features.forEach((f) => { console.log(`  • ${f}`); });
+        info.features.forEach((f) => {
+          console.log(`  • ${f}`);
+        });
         console.log("");
 
         // Generate Solana Pay URL
@@ -147,19 +140,19 @@ export const subscriptionCommand = new Command("subscription")
       }),
   )
   .addCommand(
-    new Command("tiers")
-      .description("List all available tiers")
-      .action(() => {
-        console.log("Available Tiers\n");
-        Object.entries(TIER_INFO).forEach(([key, info]) => {
-          console.log(`${info.name} (${key})`);
-          console.log(`  Max profit: ${info.maxProfit}`);
-          console.log(`  Monthly fee: ${info.monthlyFee}`);
-          console.log("  Features:");
-        info.features.forEach((f) => { console.log(`  • ${f}`); });
-          console.log("");
+    new Command("tiers").description("List all available tiers").action(() => {
+      console.log("Available Tiers\n");
+      Object.entries(TIER_INFO).forEach(([key, info]) => {
+        console.log(`${info.name} (${key})`);
+        console.log(`  Max profit: ${info.maxProfit}`);
+        console.log(`  Monthly fee: ${info.monthlyFee}`);
+        console.log("  Features:");
+        info.features.forEach((f) => {
+          console.log(`  • ${f}`);
         });
-      }),
+        console.log("");
+      });
+    }),
   )
   .addCommand(
     new Command("calculate-fees")

@@ -58,8 +58,7 @@ export const setupCommand = new Command("setup")
             p.text({
               message: "Helius API key",
               placeholder: "your-helius-api-key",
-              validate: (v) =>
-                v && v.length > 8 ? undefined : "Key too short",
+              validate: (v) => (v && v.length > 8 ? undefined : "Key too short"),
             }),
 
           walletKey: () =>
@@ -71,8 +70,7 @@ export const setupCommand = new Command("setup")
 
           watchlistPools: () =>
             p.text({
-              message:
-                "Watchlist pools (comma-separated, leave blank for pool discovery)",
+              message: "Watchlist pools (comma-separated, leave blank for pool discovery)",
               placeholder: "ABC123...,DEF456...",
               initialValue: "",
             }),

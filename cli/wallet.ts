@@ -41,22 +41,20 @@ export const walletCommand = new Command("wallet")
       }),
   )
   .addCommand(
-    new Command("show")
-      .description("Show wallet pubkey")
-      .action(() => {
-        if (!fs.existsSync(WALLET_FILE)) {
-          console.error("Error: No wallet found. Run 'prism wallet generate' first.");
-          process.exit(1);
-        }
-        let walletData: { pubkey: string };
-        try {
-          walletData = JSON.parse(fs.readFileSync(WALLET_FILE, "utf-8"));
-        } catch (err) {
-          console.error("Error: Failed to parse wallet file. It may be corrupted.");
-          process.exit(1);
-        }
-        console.log(walletData.pubkey);
-      }),
+    new Command("show").description("Show wallet pubkey").action(() => {
+      if (!fs.existsSync(WALLET_FILE)) {
+        console.error("Error: No wallet found. Run 'prism wallet generate' first.");
+        process.exit(1);
+      }
+      let walletData: { pubkey: string };
+      try {
+        walletData = JSON.parse(fs.readFileSync(WALLET_FILE, "utf-8"));
+      } catch (err) {
+        console.error("Error: Failed to parse wallet file. It may be corrupted.");
+        process.exit(1);
+      }
+      console.log(walletData.pubkey);
+    }),
   )
   .addCommand(
     new Command("import")
@@ -91,7 +89,9 @@ export const walletCommand = new Command("wallet")
             process.exit(1);
           }
         } else if (keypairStr) {
-          console.warn("⚠️  SECURITY WARNING: Providing a keypair as a CLI argument exposes it to `ps aux` and shell history. Use --file or --stdin instead.");
+          console.warn(
+            "⚠️  SECURITY WARNING: Providing a keypair as a CLI argument exposes it to `ps aux` and shell history. Use --file or --stdin instead.",
+          );
           try {
             secretKey = JSON.parse(keypairStr);
           } catch (err) {
@@ -99,7 +99,9 @@ export const walletCommand = new Command("wallet")
             process.exit(1);
           }
         } else {
-          console.error("Error: Keypair required. Provide via --file <path>, --stdin, or as a positional argument (not recommended).");
+          console.error(
+            "Error: Keypair required. Provide via --file <path>, --stdin, or as a positional argument (not recommended).",
+          );
           process.exit(1);
         }
 
@@ -107,7 +109,9 @@ export const walletCommand = new Command("wallet")
         try {
           keypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
         } catch (err) {
-          console.error("Error: Invalid keypair. The secret key array may have the wrong length or format.");
+          console.error(
+            "Error: Invalid keypair. The secret key array may have the wrong length or format.",
+          );
           process.exit(1);
         }
         const walletData = {

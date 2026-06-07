@@ -38,17 +38,12 @@ export const TIERS: Record<string, TierConfig> = {
   },
 };
 
-export function calculateTier(
-  walletSol: number,
-  referralCount: number,
-): string {
+export function calculateTier(walletSol: number, referralCount: number): string {
   const fund = TIERS.fund;
   const pro = TIERS.pro;
   if (!fund || !pro) return "free";
-  if (walletSol >= fund.minWalletSol || referralCount >= fund.minReferrals)
-    return "fund";
-  if (walletSol >= pro.minWalletSol || referralCount >= pro.minReferrals)
-    return "pro";
+  if (walletSol >= fund.minWalletSol || referralCount >= fund.minReferrals) return "fund";
+  if (walletSol >= pro.minWalletSol || referralCount >= pro.minReferrals) return "pro";
   return "free";
 }
 
@@ -63,12 +58,10 @@ export function calculatePlatformFee(
   if (!tierConfig) {
     return { platformFeeUsd: 0, netFeeX: feeXAmount, netFeeY: feeYAmount };
   }
-  const totalFeeUsd =
-    feeXAmount * tokenPrices.x + feeYAmount * tokenPrices.y;
+  const totalFeeUsd = feeXAmount * tokenPrices.x + feeYAmount * tokenPrices.y;
   const platformFeeUsd = totalFeeUsd * tierConfig.platformFeeRate;
 
-  const xShare =
-    totalFeeUsd > 0 ? (feeXAmount * tokenPrices.x) / totalFeeUsd : 0.5;
+  const xShare = totalFeeUsd > 0 ? (feeXAmount * tokenPrices.x) / totalFeeUsd : 0.5;
   const yShare = 1 - xShare;
 
   const platformFeeX = (platformFeeUsd * xShare) / tokenPrices.x;
@@ -82,10 +75,7 @@ export function calculatePlatformFee(
 }
 
 // Calculate credit discount (max 50%)
-export function calculateCreditDiscount(
-  credits: number,
-  feeUsd: number,
-): number {
+export function calculateCreditDiscount(credits: number, feeUsd: number): number {
   const maxDiscount = feeUsd * 0.5;
   return Math.min(credits, maxDiscount);
 }

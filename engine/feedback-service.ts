@@ -386,16 +386,27 @@ export const FeedbackLive = Layer.effect(
         const now = Date.now();
         const rateHourCount = allRecent.filter((f) => f.reportedAt > now - 60 * 60 * 1000).length;
         if (rateHourCount >= FEEDBACK_LIMITS.perHour) {
-          return { kind: "rate_limited" as const, reason: `Exceeded ${FEEDBACK_LIMITS.perHour} per hour` };
+          return {
+            kind: "rate_limited" as const,
+            reason: `Exceeded ${FEEDBACK_LIMITS.perHour} per hour`,
+          };
         }
-        const rateDayCount = allRecent.filter((f) => f.reportedAt > now - 24 * 60 * 60 * 1000).length;
+        const rateDayCount = allRecent.filter(
+          (f) => f.reportedAt > now - 24 * 60 * 60 * 1000,
+        ).length;
         if (rateDayCount >= FEEDBACK_LIMITS.perDay) {
-          return { kind: "rate_limited" as const, reason: `Exceeded ${FEEDBACK_LIMITS.perDay} per day` };
+          return {
+            kind: "rate_limited" as const,
+            reason: `Exceeded ${FEEDBACK_LIMITS.perDay} per day`,
+          };
         }
         if (allRecent.length > 0) {
           const lastSubmission = Math.max(...allRecent.map((f) => f.reportedAt));
           if (now - lastSubmission < FEEDBACK_LIMITS.minIntervalMs) {
-            return { kind: "rate_limited" as const, reason: `Minimum interval is ${FEEDBACK_LIMITS.minIntervalMs / 1000}s` };
+            return {
+              kind: "rate_limited" as const,
+              reason: `Minimum interval is ${FEEDBACK_LIMITS.minIntervalMs / 1000}s`,
+            };
           }
         }
 

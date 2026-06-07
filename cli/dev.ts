@@ -33,7 +33,9 @@ export const devCommand = new Command("dev")
       PRISM_ALLOW_DIRECT: "true",
     };
     if (options.exitLive) {
-      console.warn("⚠️  PAPER_MODE_EXIT_LIVE enabled — paper mode will execute live transactions for EXIT");
+      console.warn(
+        "⚠️  PAPER_MODE_EXIT_LIVE enabled — paper mode will execute live transactions for EXIT",
+      );
       env.PAPER_MODE_EXIT_LIVE = "true";
     }
 

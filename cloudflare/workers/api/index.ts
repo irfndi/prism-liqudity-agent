@@ -772,6 +772,55 @@ app.get("/v1/errors/stats", async (c) => {
   }
 });
 
+// ── Fee Wallet ───────────────────────────────────────────────────────────────
+
+const SOLANA_BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+app.get("/v1/fee-wallet", async (c) => {
+  const { CACHE } = c.env;
+
+  if (CACHE) {
+    const kvAddress = await CACHE.get("fee_wallet_address");
+    if (kvAddress) {
+      return c.json({ address: kvAddress, source: "kv" });
+    }
+  }
+
+  if (c.env.FEE_WALLET_ADDRESS) {
+    return c.json({ address: c.env.FEE_WALLET_ADDRESS, source: "secret" });
+  }
+
+  return c.json({ error: "No fee wallet configured" }, 404);
+});
+
+app.put("/v1/fee-wallet", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const match = authHeader?.match(/^Bearer\s+(.+)$/);
+  const token = match?.[1];
+
+  if (!token || !c.env.ADMIN_API_KEY || !constantTimeEqual(token, c.env.ADMIN_API_KEY)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = (await c.req.json().catch(() => ({}))) as { address?: string };
+
+  if (!body.address || typeof body.address !== "string") {
+    return c.json({ error: "address is required" }, 400);
+  }
+
+  if (!SOLANA_BASE58_RE.test(body.address)) {
+    return c.json({ error: "Invalid Solana address (must be base58, 32-44 chars)" }, 400);
+  }
+
+  const { CACHE } = c.env;
+  if (!CACHE) {
+    return c.json({ error: "KV not available" }, 500);
+  }
+
+  await CACHE.put("fee_wallet_address", body.address);
+  return c.json({ address: body.address, updated: true });
+});
+
 // ── Install Telemetry ───────────────────────────────────────────────────────
 // Privacy: install_id is a random UUID generated client-side; no PII.
 
@@ -1039,6 +1088,123 @@ app.get("/v1/subscription/status", async (c) => {
     });
   } catch {
     return c.json({ error: "Failed to get subscription status" }, 500);
+  }
+});
+
+// ── Revenue Tracking ─────────────────────────────────────────────────────────
+// Engine reports fee collections; admin dashboard queries aggregated stats.
+
+app.post("/v1/revenue/log", async (c) => {
+  const { DB, CACHE } = c.env;
+  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    poolAddress?: string;
+    positionPubkey?: string;
+    feeX?: number;
+    feeY?: number;
+    platformFeeX?: number;
+    platformFeeY?: number;
+    tier?: string;
+    txSignature?: string;
+    feeTransferTxSignature?: string;
+    userId?: string;
+    installId?: string;
+  };
+
+  // Validate required fields
+  if (
+    typeof body.poolAddress !== "string" ||
+    body.poolAddress.length === 0 ||
+    typeof body.platformFeeX !== "number" ||
+    typeof body.platformFeeY !== "number"
+  ) {
+    return c.json(
+      { error: "Missing required fields: poolAddress (string), platformFeeX (number), platformFeeY (number)" },
+      400,
+    );
+  }
+
+  // Rate limit: 200 reports per IP per hour
+  if (CACHE) {
+    const rateKey = `rate_limit:revenue_log:${clientIp}`;
+    const rateData = await CACHE.get(rateKey);
+    const count = rateData ? parseInt(rateData, 10) : 0;
+    if (count >= 200) {
+      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    }
+    await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+  }
+
+  try {
+    const id = generateId();
+    await DB.prepare(
+      `INSERT INTO revenue_events (id, pool_address, position_pubkey, fee_x, fee_y, platform_fee_x, platform_fee_y, tier, user_id, install_id, tx_signature, fee_transfer_tx_signature)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        body.poolAddress,
+        body.positionPubkey ?? null,
+        body.feeX ?? 0,
+        body.feeY ?? 0,
+        body.platformFeeX,
+        body.platformFeeY,
+        body.tier ?? "free",
+        body.userId ?? null,
+        body.installId ?? null,
+        body.txSignature ?? null,
+        body.feeTransferTxSignature ?? null,
+      )
+      .run();
+
+    return c.json({ id });
+  } catch (err) {
+    console.error("Failed to store revenue event:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+app.get("/v1/revenue", async (c) => {
+  const { DB } = c.env;
+
+  // Admin auth
+  const authHeader = c.req.header("Authorization");
+  const match = authHeader?.match(/^Bearer\s+(.+)$/);
+  const token = match?.[1];
+
+  if (!token || !c.env.ADMIN_API_KEY || !constantTimeEqual(token, c.env.ADMIN_API_KEY)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    // Total events
+    const totalResult = await DB.prepare(
+      "SELECT COUNT(*) as total FROM revenue_events",
+    ).first();
+    const total = (totalResult as { total?: number })?.total ?? 0;
+
+    // By tier
+    const tierResult = await DB.prepare(
+      `SELECT tier, COUNT(*) as count, SUM(platform_fee_x + platform_fee_y) as totalFee
+       FROM revenue_events
+       GROUP BY tier`,
+    ).all();
+    const byTier = tierResult.results ?? [];
+
+    // Recent events (last 20)
+    const recentResult = await DB.prepare(
+      "SELECT * FROM revenue_events ORDER BY created_at DESC LIMIT 20",
+    ).all();
+    const recent = recentResult.results ?? [];
+
+    return c.json({
+      total,
+      byTier,
+      recent,
+    });
+  } catch {
+    return c.json({ error: "Failed to fetch revenue stats" }, 500);
   }
 });
 

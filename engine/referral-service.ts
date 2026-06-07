@@ -15,9 +15,7 @@ export function generateReferralCode(): string {
   return code;
 }
 
-export function checkMilestone(
-  referralCount: number,
-): { count: number; bonus: number } | null {
+export function checkMilestone(referralCount: number): { count: number; bonus: number } | null {
   for (let i = REFERRAL_MILESTONES.length - 1; i >= 0; i--) {
     const milestone = REFERRAL_MILESTONES[i];
     if (milestone && referralCount >= milestone.count) {
@@ -38,21 +36,15 @@ const validateCodeImpl = (
   code: string,
 ): Effect.Effect<{ valid: boolean; referrerId?: string }, Error> =>
   Effect.succeed(
-    code.length === 8
-      ? { valid: true, referrerId: "dummy_referrer" }
-      : { valid: false },
+    code.length === 8 ? { valid: true, referrerId: "dummy_referrer" } : { valid: false },
   );
 
-const applyReferralImpl = (
-  code: string,
-  refereeId: string,
-): Effect.Effect<void, Error> =>
+const applyReferralImpl = (code: string, refereeId: string): Effect.Effect<void, Error> =>
   Effect.sync(() => {
     console.info("Applied referral", { code, refereeId });
   });
 
-const getReferralCountImpl = (_userId: string): Effect.Effect<number, Error> =>
-  Effect.succeed(0);
+const getReferralCountImpl = (_userId: string): Effect.Effect<number, Error> => Effect.succeed(0);
 
 export const ReferralLive = Layer.succeed(ReferralService, {
   generateCode: generateCodeImpl,
