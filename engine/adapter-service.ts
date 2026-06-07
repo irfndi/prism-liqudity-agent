@@ -936,9 +936,14 @@ export const AdapterLive = Layer.effect(
           });
 
           try {
+            const jupiterApiKey = process.env.JUPITER_API_KEY ?? "";
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (jupiterApiKey) headers["x-api-key"] = jupiterApiKey;
+
             const quoteResponse = yield* Effect.tryPromise(() =>
               fetch(
-                `https://quote-api.jup.ag/v6/quote?inputMint=${USDC_MINT}&outputMint=${SOL_MINT}&amount=${Math.round(swapAmountUSDC * 1e6)}&slippageBps=50`,
+                `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${SOL_MINT}&amount=${Math.round(swapAmountUSDC * 1e6)}&slippageBps=50&asLegacyTransaction=true`,
+                { headers: jupiterApiKey ? headers : undefined },
               ),
             );
 
@@ -952,13 +957,14 @@ export const AdapterLive = Layer.effect(
             };
 
             const swapResponse = yield* Effect.tryPromise(() =>
-              fetch("https://quote-api.jup.ag/v6/swap", {
+              fetch("https://api.jup.ag/swap/v1/swap-instructions", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({
                   quoteResponse: quoteData,
                   userPublicKey: wallet!.publicKey.toBase58(),
                   wrapAndUnwrapSol: true,
+                  asLegacyTransaction: true,
                 }),
               }),
             );

@@ -627,10 +627,9 @@ export const program = Effect.gen(function* () {
         return false;
       }
 
-      yield* adapter.swapUSDCForSOL(0.05, 1.0).pipe(Effect.catchAll(() => Effect.void));
-
-      // SOL reserve check
       if (decision.action === "ENTER") {
+        yield* adapter.swapUSDCForSOL(0.05, 2.0).pipe(Effect.catchAll(() => Effect.void));
+
         const lamports = yield* adapter
           .getNativeSolBalance()
           .pipe(Effect.catchAll(() => Effect.succeed(0)));
