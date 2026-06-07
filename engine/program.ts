@@ -148,40 +148,6 @@ export const program = Effect.gen(function* () {
     }
   }
 
-  const reconcilePositions = (): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      if (!adapter.hasWallet()) {
-        return;
-      }
-      const walletAddress = adapter.getWalletAddress();
-      if (!walletAddress) {
-        return;
-      }
-
-      const onChainPositions = yield* adapter
-        .getAllWalletPositions(walletAddress)
-        .pipe(Effect.catchAll(() => Effect.succeed([])));
-
-      const onChainPoolSet = new Set(onChainPositions.map((p) => p.poolAddress));
-
-      for (const [poolAddress, pos] of trackedPositions) {
-        if (pos.positionPubKey && !onChainPoolSet.has(poolAddress)) {
-          console.warn(`Reconciling: position ${poolAddress} no longer on-chain — removing from tracking`);
-          trackedPositions.delete(poolAddress);
-          yield* db.deletePosition(poolAddress).pipe(Effect.catchAll(() => Effect.void));
-          yield* memory
-            .upsert({
-              category: "warning",
-              content: `Position ${poolAddress} was closed externally (e.g. via Solscan/Meteora UI). Removed from tracking.`,
-              poolAddress,
-            })
-            .pipe(Effect.catchAll(() => Effect.void));
-        }
-      }
-    });
-
-  yield* reconcilePositions();
-
   // ─── Pool discovery ────────────────────────────────────────────────────────
 
   let poolsToScan = [...config.watchlistPools];
@@ -199,6 +165,84 @@ export const program = Effect.gen(function* () {
       }
     }
   }
+
+  const reconcilePositions = (): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (!adapter.hasWallet()) {
+        return;
+      }
+      const walletAddress = adapter.getWalletAddress();
+      if (!walletAddress) {
+        return;
+      }
+
+      const onChainPositions = yield* adapter
+        .getAllWalletPositions(walletAddress)
+        .pipe(Effect.catchAll(() => Effect.succeed([])));
+
+      const onChainPoolSet = new Set(onChainPositions.map((p) => p.poolAddress));
+      const watchedPoolSet = new Set(poolsToScan);
+
+      for (const [poolAddress, pos] of trackedPositions) {
+        if (pos.positionPubKey && !onChainPoolSet.has(poolAddress)) {
+          console.warn(
+            `Reconciling: position ${poolAddress} no longer on-chain — removing from tracking`,
+          );
+          trackedPositions.delete(poolAddress);
+          yield* db.deletePosition(poolAddress).pipe(Effect.catchAll(() => Effect.void));
+          yield* memory
+            .upsert({
+              category: "warning",
+              content: `Position ${poolAddress} was closed externally (e.g. via Solscan/Meteora UI). Removed from tracking.`,
+              poolAddress,
+            })
+            .pipe(Effect.catchAll(() => Effect.void));
+        }
+      }
+
+      for (const onChainPos of onChainPositions) {
+        if (!trackedPositions.has(onChainPos.poolAddress) && watchedPoolSet.has(onChainPos.poolAddress)) {
+          console.warn(
+            `Reconciling: discovered external position in ${onChainPos.poolAddress} — adding to tracking`,
+          );
+          const pool = yield* adapter
+            .getPoolState(onChainPos.poolAddress)
+            .pipe(Effect.catchAll(() => Effect.succeed(null)));
+          if (pool) {
+            const pos: PositionRecord = {
+              poolAddress: onChainPos.poolAddress,
+              positionPubKey: onChainPos.positionPubKey,
+              depositedUsd: 0,
+              currentValueUsd: 0,
+              tokenXSymbol: pool.tokenXSymbol,
+              tokenYSymbol: pool.tokenYSymbol,
+              activeBinId: pool.activeBinId,
+              lowerBinId: onChainPos.lowerBinId,
+              upperBinId: onChainPos.upperBinId,
+              timestamp: Date.now(),
+              outOfRangeSince: null,
+              oorCycleCount: 0,
+              lastFeeClaimAt: Date.now(),
+              trailingStopThreshold: null,
+              highestValueUsd: null,
+              lastRebalanceAt: 0,
+              paperExitedAt: null,
+            };
+            trackedPositions.set(onChainPos.poolAddress, pos);
+            yield* db.savePosition(pos).pipe(Effect.catchAll(() => Effect.void));
+            yield* memory
+              .upsert({
+                category: "warning",
+                content: `External position detected in ${onChainPos.poolAddress} and added to tracking.`,
+                poolAddress: onChainPos.poolAddress,
+              })
+              .pipe(Effect.catchAll(() => Effect.void));
+          }
+        }
+      }
+    });
+
+  yield* reconcilePositions();
 
   // ─── Scan cycle ────────────────────────────────────────────────────────────
 
