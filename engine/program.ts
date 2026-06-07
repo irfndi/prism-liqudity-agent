@@ -148,6 +148,40 @@ export const program = Effect.gen(function* () {
     }
   }
 
+  const reconcilePositions = (): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (!adapter.hasWallet()) {
+        return;
+      }
+      const walletAddress = adapter.getWalletAddress();
+      if (!walletAddress) {
+        return;
+      }
+
+      const onChainPositions = yield* adapter
+        .getAllWalletPositions(walletAddress)
+        .pipe(Effect.catchAll(() => Effect.succeed([])));
+
+      const onChainPoolSet = new Set(onChainPositions.map((p) => p.poolAddress));
+
+      for (const [poolAddress, pos] of trackedPositions) {
+        if (pos.positionPubKey && !onChainPoolSet.has(poolAddress)) {
+          console.warn(`Reconciling: position ${poolAddress} no longer on-chain — removing from tracking`);
+          trackedPositions.delete(poolAddress);
+          yield* db.deletePosition(poolAddress).pipe(Effect.catchAll(() => Effect.void));
+          yield* memory
+            .upsert({
+              category: "warning",
+              content: `Position ${poolAddress} was closed externally (e.g. via Solscan/Meteora UI). Removed from tracking.`,
+              poolAddress,
+            })
+            .pipe(Effect.catchAll(() => Effect.void));
+        }
+      }
+    });
+
+  yield* reconcilePositions();
+
   // ─── Pool discovery ────────────────────────────────────────────────────────
 
   let poolsToScan = [...config.watchlistPools];
@@ -292,8 +326,8 @@ export const program = Effect.gen(function* () {
       // OOR tracking must run before EXIT conditions so that out-of-range
       // cycle counts accumulate even when fee/IL triggers an EXIT.
       const pos = trackedPositions.get(poolAddress);
-      const hasPosition = !!pos;
-      if (hasPosition) {
+      let hasPosition = !!pos;
+      if (pos) {
         const inRange = pool.activeBinId >= pos.lowerBinId && pool.activeBinId <= pos.upperBinId;
         if (!inRange) {
           if (pos.outOfRangeSince === null) {
@@ -303,6 +337,35 @@ export const program = Effect.gen(function* () {
         } else {
           pos.outOfRangeSince = null;
           pos.oorCycleCount = 0;
+        }
+      }
+
+      if (pos && pos.positionPubKey && adapter.hasWallet()) {
+        const walletAddress = adapter.getWalletAddress();
+        if (walletAddress) {
+          const onChainPositions = yield* adapter
+            .getPositions(poolAddress, walletAddress)
+            .pipe(Effect.catchAll(() => Effect.succeed([])));
+          const stillOnChain = onChainPositions.some(
+            (p) => p.id === pos.positionPubKey,
+          );
+          if (!stillOnChain) {
+            console.warn(
+              `Per-cycle reconcile: position ${poolAddress} no longer on-chain — removing from tracking`,
+            );
+            trackedPositions.delete(poolAddress);
+            yield* db.deletePosition(poolAddress).pipe(
+              Effect.catchAll(() => Effect.void),
+            );
+            yield* memory
+              .upsert({
+                category: "warning",
+                content: `Position ${poolAddress} was closed externally during this cycle. Removed from tracking.`,
+                poolAddress,
+              })
+              .pipe(Effect.catchAll(() => Effect.void));
+            hasPosition = false;
+          }
         }
       }
 

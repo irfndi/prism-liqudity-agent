@@ -494,6 +494,33 @@ export const AdapterLive = Layer.effect(
           });
         }),
 
+      getAllWalletPositions: (walletAddress) =>
+        Effect.gen(function* () {
+          const wallet = new PublicKey(walletAddress);
+          // DLMM.getAllLbPairPositionsByUser returns a Map<poolAddress, PositionInfo> for all pools
+          const allPositions = yield* Effect.tryPromise(() =>
+            DLMM.getAllLbPairPositionsByUser(connection, wallet),
+          );
+
+          const result: Array<{
+            poolAddress: string;
+            positionPubKey: string;
+            lowerBinId: number;
+            upperBinId: number;
+          }> = [];
+          for (const [poolAddress, info] of allPositions.entries()) {
+            for (const pos of info.lbPairPositionsData) {
+              result.push({
+                poolAddress,
+                positionPubKey: pos.publicKey.toBase58(),
+                lowerBinId: pos.positionData.lowerBinId,
+                upperBinId: pos.positionData.upperBinId,
+              });
+            }
+          }
+          return result;
+        }),
+
       simulateRebalance: (poolAddress, newLowerBinId, newUpperBinId) =>
         Effect.gen(function* () {
           const pool = yield* api.getPoolState(poolAddress);

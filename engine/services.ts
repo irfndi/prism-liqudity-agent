@@ -34,6 +34,9 @@ export interface AdapterApi {
     poolAddress: string,
     walletAddress: string,
   ) => Effect.Effect<ReadonlyArray<Position>, unknown>;
+  readonly getAllWalletPositions: (
+    walletAddress: string,
+  ) => Effect.Effect<ReadonlyArray<{ poolAddress: string; positionPubKey: string; lowerBinId: number; upperBinId: number }>, unknown>;
   readonly simulateRebalance: (
     poolAddress: string,
     newLowerBinId: number,

@@ -40,6 +40,7 @@ function makeTestAdapterLayer() {
     getPoolState: () => Effect.fail("not implemented"),
     getBinArray: () => Effect.fail("not implemented"),
     getPositions: () => Effect.succeed([]),
+    getAllWalletPositions: () => Effect.succeed([]),
     simulateRebalance: () => Effect.fail("not implemented"),
     enterPosition: () => Effect.fail("not implemented"),
     exitPosition: () => Effect.fail("not implemented"),
