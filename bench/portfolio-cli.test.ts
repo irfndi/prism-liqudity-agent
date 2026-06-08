@@ -3,10 +3,6 @@ import { Effect } from "effect";
 import { DbLive } from "../engine/db-service.js";
 import { DbService } from "../engine/services.js";
 
-function run<T>(effect: Effect.Effect<T, unknown, unknown>, layer: unknown): T {
-  return Effect.runSync((Effect.provide as any)(effect, layer));
-}
-
 async function runAsync<T>(effect: Effect.Effect<T, unknown, unknown>, layer: unknown): Promise<T> {
   return Effect.runPromise((Effect.provide as any)(effect, layer));
 }
