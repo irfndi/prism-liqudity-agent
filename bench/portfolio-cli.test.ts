@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
-import { ConfigService } from "../engine/config-service.js";
+import { Effect } from "effect";
 import { DbLive } from "../engine/db-service.js";
 import { DbService } from "../engine/services.js";
 
@@ -223,57 +222,22 @@ describe("toHistoryJsonOutput", () => {
       expect(json.positions[0].realizedPnlPct).toBe(-10);
       expect(json.positions[0].paperExitedAt).toBe(1700000000000);
     }
+    expect(json.summary.totalDepositedUsd).toBe(1000);
+    expect(json.summary.totalUnrealizedPnlUsd).toBe(-100);
+    expect(json.summary.positionCount).toBe(1);
   });
 
   it("handles empty positions", () => {
     const json = toHistoryJsonOutput([]);
     expect(json.positions).toHaveLength(0);
+    expect(json.summary.positionCount).toBe(0);
+    expect(json.summary.totalDepositedUsd).toBe(0);
   });
 });
 
 describe("portfolio — DB integration", () => {
   function buildLayer() {
-    const mockConfig = Layer.succeed(ConfigService, {
-      walletPrivateKey: "",
-      heliusApiKey: "",
-      solanaRpcUrl: "",
-      paperTrading: true,
-      scanIntervalMs: 600_000,
-      minPoolTvlUsd: 50_000,
-      minFeeIlRatio: 1.2,
-      tvlDropExitPct: 0.3,
-      volumeAuthThreshold: 0.7,
-      maxConcurrentPositions: 5,
-      minRebalanceIntervalMs: 86_400_000,
-      minRebalanceNetBenefitUsd: 10,
-      confidenceThreshold: 0.65,
-      paperPortfolioUsd: 10_000,
-      minBinUtilization: 0.3,
-      maxRebalanceRangeBins: 50,
-      watchlistPools: [],
-      stopLossPct: 0.15,
-      trailingStopPct: 0.1,
-      oorGracePeriodCycles: 3,
-      feeClaimIntervalMs: 86_400_000,
-      enablePoolDiscovery: false,
-      discoveryMinTvlUsd: 100_000,
-      discoveryMinFeeRatio: 1.5,
-      deployerBlacklistPath: "",
-      tokenBlacklistPath: "",
-      sqliteDbPath: "",
-      enableSnapshotCapture: false,
-      autoUpdate: true,
-      updateCheckIntervalMs: 21_600_000,
-      updateChannel: "stable",
-      updateGithubRepo: "",
-      updateAllowDirty: false,
-      updateR2PublicUrl: "",
-      githubToken: "",
-      githubRepo: "",
-      feedbackOptOut: false,
-      paperModeExitLive: false,
-    });
-    return Layer.merge(mockConfig, DbLive(":memory:"));
+    return DbLive(":memory:");
   }
 
   it("retrieves active positions from DB", async () => {

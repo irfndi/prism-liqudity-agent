@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { Effect, Layer } from "effect";
-import { ConfigLive } from "../engine/config-service.js";
 import { DbLive } from "../engine/db-service.js";
 import { DbService } from "../engine/services.js";
 import type { PositionRecord } from "../engine/db-service.js";
@@ -208,6 +207,7 @@ export interface HistoryJsonOutput {
     realizedPnlPct: number;
     paperExitedAt: number | null;
   }>;
+  summary: PortfolioSummary;
 }
 
 export function toHistoryJsonOutput(positions: ReadonlyArray<PositionRecord>): HistoryJsonOutput {
@@ -224,6 +224,7 @@ export function toHistoryJsonOutput(positions: ReadonlyArray<PositionRecord>): H
         paperExitedAt: pos.paperExitedAt,
       };
     }),
+    summary: computeSummary(positions),
   };
 }
 
@@ -254,15 +255,18 @@ async function runPortfolioAction(action: () => Promise<void>): Promise<void> {
 }
 
 // Default action: show active positions
-portfolioCommand.action(async (opts: { json?: boolean }) => {
+portfolioCommand.action(async function (this: Command, opts: { json?: boolean }) {
   await runPortfolioAction(async () => {
+    const allOpts = this.optsWithGlobals();
+    const isJson = opts.json || allOpts.json;
+
     const program = buildProgram();
     await Effect.runPromise(
       Effect.gen(function* () {
         const db = yield* DbService;
         const positions = yield* db.getAllPositions();
 
-        if (opts.json) {
+        if (isJson) {
           console.log(JSON.stringify(toJsonOutput(positions), null, 2));
           return;
         }

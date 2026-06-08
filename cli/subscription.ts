@@ -74,7 +74,7 @@ export const subscriptionCommand = new Command("subscription")
       }
 
       const { tier, walletSol, referralCount, credits, platformFeeRate } = result.data;
-      const info = TIER_INFO[tier] ?? TIER_INFO.free;
+      const info = (TIER_INFO[tier] ?? TIER_INFO.free)!;
 
       console.log(`Tier: ${info.name}`);
       console.log(`Wallet: ${walletSol.toFixed(2)} SOL`);

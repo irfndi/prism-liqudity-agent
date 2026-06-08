@@ -30,13 +30,16 @@ export async function prismApiPost<T = unknown>(
   if (options.apiKey) {
     headers.Authorization = `Bearer ${options.apiKey}`;
   }
+  const init: RequestInit = {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  };
+  if (options.signal) {
+    init.signal = options.signal;
+  }
   try {
-    const response = await fetch(`${getApiBaseUrl()}${path}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
+    const response = await fetch(`${getApiBaseUrl()}${path}`, init);
     if (!response.ok) {
       return {
         ok: false,
