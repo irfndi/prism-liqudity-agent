@@ -9,7 +9,7 @@ import { createLogger } from "../engine/logger.js";
 const logger = createLogger("portfolio-cli");
 
 function buildProgram(): Layer.Layer<DbService, never, never> {
-  return Layer.provide(DbLive(), ConfigLive);
+  return DbLive(process.env.SQLITE_DB_PATH);
 }
 
 export interface PortfolioSummary {
