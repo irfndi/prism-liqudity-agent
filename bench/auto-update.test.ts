@@ -6,8 +6,8 @@ import { DbService } from "../engine/services.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function run<T>(effect: Effect.Effect<T, unknown, unknown>, layer: unknown): T {
-  return Effect.runSync((Effect.provide as any)(effect, layer));
+function run<T, R>(effect: Effect.Effect<T, unknown, R>, layer: Layer.Layer<R, never, never>): T {
+  return Effect.runSync(Effect.provide(effect, layer));
 }
 
 function buildLayer(overrides: Partial<{

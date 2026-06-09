@@ -886,7 +886,7 @@ export const program = Effect.gen(function* () {
             .claimFees(decision.poolAddress, pos.positionPubKey, platformFeeRate)
             .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-          if (claimResult && (claimResult.platformFeeX > 0 || claimResult.platformFeeY > 0)) {
+          if (claimResult && (claimResult.platformFeeX > 0 || claimResult.platformFeeY > 0 || (claimResult.operatorFeeX ?? 0) > 0 || (claimResult.operatorFeeY ?? 0) > 0)) {
             adapter.reportFeeCollection({
               poolAddress: decision.poolAddress,
               positionPubkey: pos.positionPubKey,
@@ -991,7 +991,7 @@ export const program = Effect.gen(function* () {
             continue;
           }
 
-          if (result.platformFeeX > 0 || result.platformFeeY > 0) {
+          if (result.platformFeeX > 0 || result.platformFeeY > 0 || (result.operatorFeeX ?? 0) > 0 || (result.operatorFeeY ?? 0) > 0) {
             adapter.reportFeeCollection({
               poolAddress,
               positionPubkey: pos.positionPubKey,

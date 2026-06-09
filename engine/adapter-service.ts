@@ -887,6 +887,8 @@ export const AdapterLive = Layer.effect(
                   "Circular wallet detected — fees retained by operator",
                   { pool: poolAddress, platformFeeX: revenueShare.platformFeeX, platformFeeY: revenueShare.platformFeeY },
                 );
+                actualOperatorFeeX = revenueShare.platformFeeX;
+                actualOperatorFeeY = revenueShare.platformFeeY;
               } else if (feeWallet) {
                 const transferResult = yield* Effect.gen(function* () {
                   const feeWalletPubkey = new PublicKey(feeWallet);
@@ -966,6 +968,9 @@ export const AdapterLive = Layer.effect(
                   feeTransferTxSignature = transferResult;
                   actualPlatformFeeX = revenueShare.amountToTransferX;
                   actualPlatformFeeY = revenueShare.amountToTransferY;
+                  actualOperatorFeeX = revenueShare.operatorFeeX;
+                  actualOperatorFeeY = revenueShare.operatorFeeY;
+                } else if (revenueShare.amountToTransferX === 0 && revenueShare.amountToTransferY === 0) {
                   actualOperatorFeeX = revenueShare.operatorFeeX;
                   actualOperatorFeeY = revenueShare.operatorFeeY;
                 }

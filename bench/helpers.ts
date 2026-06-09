@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { vi } from "vitest";
 import type { PoolState, BinArray, AgentDecision } from "../engine/types.js";
 import type { PositionRecord } from "../engine/db-service.js";
@@ -80,8 +80,8 @@ export function makePosition(
 
 // ─── Effect runners ──────────────────────────────────────────────────────────
 
-export function run<T>(effect: Effect.Effect<T, unknown, unknown>, layer: unknown): T {
-  return Effect.runSync((Effect.provide as any)(effect, layer));
+export function run<T, R>(effect: Effect.Effect<T, unknown, R>, layer: Layer.Layer<R, never, never>): T {
+  return Effect.runSync(Effect.provide(effect, layer));
 }
 
 export async function runAsync<T>(
