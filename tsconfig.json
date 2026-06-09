@@ -18,6 +18,6 @@
     "exactOptionalPropertyTypes": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["engine/**/*", "ops/**/*", "types/**/*", "bench/**/*", "*.config.ts"],
+  "include": ["engine/**/*", "ops/**/*", "types/**/*", "bench/**/*", "cli/**/*", "*.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

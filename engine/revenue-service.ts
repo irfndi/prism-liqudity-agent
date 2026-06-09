@@ -9,6 +9,7 @@ export interface TierConfig {
   readonly platformFeeRate: number; // % of claimed LP fees
   readonly managementFeeRate: number; // annual
   readonly performanceFeeRate: number; // of profits
+  readonly maxFreeSol: number; // SOL exempt from performance fee
 }
 
 export const TIERS: Record<string, TierConfig> = {
@@ -19,6 +20,7 @@ export const TIERS: Record<string, TierConfig> = {
     platformFeeRate: 0,
     managementFeeRate: 0,
     performanceFeeRate: 0,
+    maxFreeSol: 0,
   },
   pro: {
     name: "pro",
@@ -27,6 +29,7 @@ export const TIERS: Record<string, TierConfig> = {
     platformFeeRate: 0.05, // 5%
     managementFeeRate: 0.01, // 1% annual
     performanceFeeRate: 0.05, // 5% of profits
+    maxFreeSol: 0,
   },
   fund: {
     name: "fund",
@@ -35,6 +38,7 @@ export const TIERS: Record<string, TierConfig> = {
     platformFeeRate: 0.1, // 10%
     managementFeeRate: 0.015, // 1.5% annual
     performanceFeeRate: 0.1, // 10% of profits
+    maxFreeSol: 0,
   },
 };
 

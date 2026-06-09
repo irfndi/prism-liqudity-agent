@@ -76,12 +76,10 @@ function buildFeedback(opts: SubmitOptions): AgentFeedback {
     : opts.file
       ? [opts.file]
       : [];
-  return {
+  const feedback: AgentFeedback = {
     category: parseCategory(opts.category, "friction"),
     severity: parseSeverity(opts.severity, "medium"),
     summary: opts.summary,
-    details: opts.details,
-    relatedFiles: relatedFiles.length > 0 ? relatedFiles : undefined,
     context: {
       prismVersion: "0.0.0",
       installMethod: "unknown",
@@ -89,6 +87,13 @@ function buildFeedback(opts: SubmitOptions): AgentFeedback {
       runtime: "unknown",
     },
   };
+  if (opts.details) {
+    Object.assign(feedback, { details: opts.details });
+  }
+  if (relatedFiles.length > 0) {
+    Object.assign(feedback, { relatedFiles });
+  }
+  return feedback;
 }
 
 async function runSubmit(feedback: AgentFeedback): Promise<FeedbackResult> {
