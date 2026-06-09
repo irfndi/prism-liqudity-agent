@@ -112,21 +112,21 @@ describe("calculateRevenueShare", () => {
   it("handles only Y token fees", () => {
     const result = calculateRevenueShare(0, 800, 0.15, true, 33, FEE_WALLET, OPERATOR_WALLET);
     expect(result.platformFeeX).toBe(0);
-    expect(result.platformFeeY).toBe(120);
+    expect(result.platformFeeY).toBe(120); // floor(800 * 0.15)
     expect(result.operatorFeeX).toBe(0);
-    expect(result.operatorFeeY).toBe(39.6);
+    expect(result.operatorFeeY).toBe(39); // floor(120 * 0.33)
     expect(result.netFeeX).toBe(0);
-    expect(result.netFeeY).toBe(680);
+    expect(result.netFeeY).toBe(680); // 800 - 120
     expect(result.amountToTransferX).toBe(0);
-    expect(result.amountToTransferY).toBe(80.4);
+    expect(result.amountToTransferY).toBe(81); // 120 - 39
   });
 
   it("handles fractional fees correctly", () => {
     const result = calculateRevenueShare(123.45, 678.9, 0.075, true, 33, FEE_WALLET, OPERATOR_WALLET);
-    expect(result.platformFeeX).toBeCloseTo(9.25875, 5);
-    expect(result.platformFeeY).toBeCloseTo(50.9175, 5);
-    expect(result.operatorFeeX).toBeCloseTo(3.0553875, 5);
-    expect(result.operatorFeeY).toBeCloseTo(16.802775, 5);
+    expect(result.platformFeeX).toBe(9); // floor(123.45 * 0.075)
+    expect(result.platformFeeY).toBe(50); // floor(678.9 * 0.075)
+    expect(result.operatorFeeX).toBe(2); // floor(9 * 0.33)
+    expect(result.operatorFeeY).toBe(16); // floor(50 * 0.33)
   });
 
   it("handles disabled revenue share with fee wallet", () => {

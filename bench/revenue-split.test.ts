@@ -57,7 +57,8 @@ function buildLayer(overrides: Partial<{
     revenueShareEnabled: overrides.revenueShareEnabled ?? false,
     revenueShareOperatorPct: overrides.revenueShareOperatorPct ?? 0,
   });
-  return Layer.merge(mockConfig, DbLive(":memory:"));
+  const baseLayer = Layer.merge(mockConfig, DbLive(":memory:"));
+  return Layer.merge(Layer.provide(AuditLive, DbLive(":memory:")), baseLayer);
 }
 
 describe("revenue share configuration", () => {
@@ -107,16 +108,16 @@ describe("revenue share fee calculation", () => {
 
   it("when enabled 50%, operator gets half", () => {
     const result = calculateRevenueShare(100, 200, 0.1, true, 50, FEE_WALLET, OPERATOR_WALLET);
-    expect(result.operatorFeeX).toBe(5); // 10 * 0.5
-    expect(result.operatorFeeY).toBe(10); // 20 * 0.5
+    expect(result.operatorFeeX).toBe(5); // floor(10 * 0.5)
+    expect(result.operatorFeeY).toBe(10); // floor(20 * 0.5)
     expect(result.amountToTransferX).toBe(5); // 10 - 5
     expect(result.amountToTransferY).toBe(10); // 20 - 10
   });
 
   it("when enabled 100%, operator gets all", () => {
     const result = calculateRevenueShare(100, 200, 0.1, true, 100, FEE_WALLET, OPERATOR_WALLET);
-    expect(result.operatorFeeX).toBe(10); // 10 * 1.0
-    expect(result.operatorFeeY).toBe(20); // 20 * 1.0
+    expect(result.operatorFeeX).toBe(10); // floor(10 * 1.0)
+    expect(result.operatorFeeY).toBe(20); // floor(20 * 1.0)
     expect(result.amountToTransferX).toBe(0); // 10 - 10
     expect(result.amountToTransferY).toBe(0); // 20 - 20
   });

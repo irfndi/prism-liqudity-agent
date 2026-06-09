@@ -10,6 +10,7 @@ import { Context, Effect, Layer } from "effect";
 import { AdapterService, type AdapterApi } from "./services.js";
 import { ConfigService } from "./config-service.js";
 import { AdapterError } from "./errors.js";
+import { createLogger } from "./logger.js";
 import type { BinArray, BinData, PoolState, Position } from "./types.js";
 import bs58 from "bs58";
 import fs from "fs";
@@ -19,6 +20,8 @@ import { randomUUID } from "crypto";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+const logger = createLogger("adapter-service");
 
 // ─── Install ID helper (engine-safe mirror of cli/install-id.ts) ───────────
 
@@ -85,14 +88,14 @@ export function calculateRevenueShare(
   let isCircular = false;
 
   if (platformFeeRate && platformFeeRate > 0 && platformFeeRate <= 1) {
-    platformFeeX = feeX * platformFeeRate;
-    platformFeeY = feeY * platformFeeRate;
+    platformFeeX = Math.floor(feeX * platformFeeRate);
+    platformFeeY = Math.floor(feeY * platformFeeRate);
 
     if (revenueShareEnabled) {
       const clampedPct = Math.max(0, Math.min(revenueShareOperatorPct, 100));
       const operatorPct = clampedPct / 100;
-      operatorFeeX = platformFeeX * operatorPct;
-      operatorFeeY = platformFeeY * operatorPct;
+      operatorFeeX = Math.floor(platformFeeX * operatorPct);
+      operatorFeeY = Math.floor(platformFeeY * operatorPct);
     }
 
     netFeeX = feeX - platformFeeX;
@@ -130,9 +133,10 @@ export const AdapterLive = Layer.effect(
     if (config.walletPrivateKey) {
       try {
         wallet = Keypair.fromSecretKey(bs58.decode(config.walletPrivateKey));
-      } catch (err) {
-        console.error("Failed to load wallet", err);
-      }
+  } catch (err) {
+    logger.error("Failed to load wallet", err);
+    wallet = null;
+  }
     }
 
     // ─── Fee wallet address (cached) ────────────────────────────────────────
@@ -875,7 +879,7 @@ export const AdapterLive = Layer.effect(
 
             if (revenueShare.platformFeeX > 0 || revenueShare.platformFeeY > 0) {
               if (revenueShare.isCircular) {
-                console.info(
+                logger.info(
                   "Circular wallet detected — fees retained by operator",
                   { pool: poolAddress, platformFeeX: revenueShare.platformFeeX, platformFeeY: revenueShare.platformFeeY },
                 );
@@ -929,7 +933,7 @@ export const AdapterLive = Layer.effect(
                   }
 
                   if (transferTx.instructions.length === 0) {
-                    console.info("No platform fee to transfer — operator keeps full share", {
+                    logger.info("No platform fee to transfer — operator keeps full share", {
                       pool: poolAddress,
                     });
                     return undefined;
@@ -945,7 +949,7 @@ export const AdapterLive = Layer.effect(
                   return sig;
                 }).pipe(
                   Effect.catchAll((err) => {
-                    console.error("Platform fee transfer failed (fees retained by user)", {
+                    logger.error("Platform fee transfer failed (fees retained by user)", {
                       pool: poolAddress,
                       platformFeeX: revenueShare.platformFeeX,
                       platformFeeY: revenueShare.platformFeeY,
@@ -956,7 +960,7 @@ export const AdapterLive = Layer.effect(
                 );
                 feeTransferTxSignature = transferResult;
               } else {
-                console.warn("No fee wallet configured — skipping platform fee transfer", {
+                logger.warn("No fee wallet configured — skipping platform fee transfer", {
                   pool: poolAddress,
                 });
               }
@@ -995,9 +999,9 @@ export const AdapterLive = Layer.effect(
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ ...event, installId }),
             });
-            if (!res.ok) console.warn("Revenue report failed:", res.status);
+            if (!res.ok) logger.warn("Revenue report failed:", res.status);
           } catch (err) {
-            console.warn("Revenue report failed:", String(err));
+            logger.warn("Revenue report failed:", String(err));
           }
         })();
       },
@@ -1040,7 +1044,7 @@ export const AdapterLive = Layer.effect(
 
           if (solBalance >= minSolThreshold) return;
 
-          console.info("Low SOL balance — swapping USDC → SOL for gas", {
+          logger.info("Low SOL balance — swapping USDC → SOL for gas", {
             solBalance: solBalance.toFixed(4),
             minThreshold: minSolThreshold,
             swapAmountUSDC,
@@ -1059,7 +1063,7 @@ export const AdapterLive = Layer.effect(
             );
 
             if (!quoteResponse.ok) {
-              console.warn("Jupiter quote failed:", quoteResponse.status);
+              logger.warn("Jupiter quote failed:", quoteResponse.status);
               return;
             }
 
@@ -1081,7 +1085,7 @@ export const AdapterLive = Layer.effect(
             );
 
             if (!swapResponse.ok) {
-              console.warn("Jupiter swap build failed:", swapResponse.status);
+              logger.warn("Jupiter swap build failed:", swapResponse.status);
               return;
             }
 
@@ -1090,7 +1094,7 @@ export const AdapterLive = Layer.effect(
             };
 
             if (!swapData.swapTransaction) {
-              console.warn("Jupiter swap: no transaction returned");
+              logger.warn("Jupiter swap: no transaction returned");
               return;
             }
 
@@ -1106,9 +1110,9 @@ export const AdapterLive = Layer.effect(
             );
 
             yield* Effect.tryPromise(() => connection.confirmTransaction(sig, "confirmed"));
-            console.info("Swapped USDC → SOL for gas", { tx: sig, amountUSDC: swapAmountUSDC });
+            logger.info("Swapped USDC → SOL for gas", { tx: sig, amountUSDC: swapAmountUSDC });
           } catch (err) {
-            console.warn("USDC → SOL swap failed (non-fatal):", String(err));
+            logger.warn("USDC → SOL swap failed (non-fatal):", String(err));
           }
         }).pipe(Effect.catchAll(() => Effect.void)),
     };
