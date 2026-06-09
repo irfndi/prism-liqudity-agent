@@ -3,7 +3,7 @@ import * as p from "@clack/prompts";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { pingInstall } from "./api.js";
+import { pingInstall, readCredentials } from "./api.js";
 
 export const setupCommand = new Command("setup")
   .description("Configure Prism trading agent")
@@ -145,7 +145,8 @@ export const setupCommand = new Command("setup")
     }
     fs.writeFileSync(envPath, envContent, { mode: 0o600 });
     fs.chmodSync(envPath, 0o600);
-    await pingInstall("setup");
+    const creds = readCredentials();
+    await pingInstall("setup", creds ? { userId: creds.userId } : {});
 
     if (!isNonInteractive) {
       p.note(

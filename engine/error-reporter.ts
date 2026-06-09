@@ -3,7 +3,7 @@
  *
  * - Sanitizes stack traces and messages (replaces base58-like keys, private keys, passwords)
  * - Buffers reports in memory and flushes in batches (5 reports or 60 seconds)
- * - Sends to a configurable endpoint via fetch (PRISM_ERROR_ENDPOINT env var, default unset = no-op)
+ * - Sends to a configurable endpoint via fetch (PRISM_ERROR_ENDPOINT env var, defaults to production API)
  * - If the endpoint fetch fails, the batch is re-queued at the front of the pending buffer
  *   (oldest reports beyond MAX_PENDING_BUFFER are dropped to bound memory)
  * - Classifies errors by string match
@@ -58,6 +58,7 @@ export interface BatchPayload {
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
+const DEFAULT_ERROR_ENDPOINT = "https://prism-api.irfndi.workers.dev/v1/errors/batch";
 const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
 const DEFAULT_BATCH_SIZE = 5;
 const MAX_PENDING_BUFFER = 1000;
@@ -154,12 +155,13 @@ export class ErrorReporter {
   private appVersion: string = "0.0.0";
 
   constructor(config: ErrorReporterConfig = {}) {
-    this.endpoint =
+    const explicitEndpoint =
       config.endpoint ??
       (typeof process !== "undefined" ? process.env.PRISM_ERROR_ENDPOINT : undefined);
     const reportingEnv =
       typeof process !== "undefined" ? process.env.PRISM_ERROR_REPORTING : undefined;
-    this.enabled = config.enabled !== undefined ? config.enabled : reportingEnv !== "false";
+    this.endpoint = explicitEndpoint ?? (reportingEnv === "true" ? DEFAULT_ERROR_ENDPOINT : undefined);
+    this.enabled = config.enabled !== undefined ? config.enabled : reportingEnv === "true";
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
     this.flushIntervalMs = config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
 

@@ -338,11 +338,21 @@ describe("failure resilience", () => {
     r.dispose();
   });
 
-  it("does not buffer reports when no endpoint is configured", () => {
+  it("buffers reports with explicit endpoint", () => {
+    const r = createErrorReporter({ enabled: true, endpoint: "https://example.com/v1/errors/batch" });
+    r.setAppVersion("1.0.0-test");
+    expect(() => {
+      r.report(new Error("should be buffered with explicit endpoint"));
+    }).not.toThrow();
+    expect(r.getPending()).toHaveLength(1);
+    r.dispose();
+  });
+
+  it("does not buffer reports without explicit endpoint", () => {
     const r = createErrorReporter({ enabled: true });
     r.setAppVersion("1.0.0-test");
     expect(() => {
-      r.report(new Error("should be dropped without an endpoint"));
+      r.report(new Error("should be dropped without endpoint"));
     }).not.toThrow();
     expect(r.getPending()).toHaveLength(0);
     r.dispose();

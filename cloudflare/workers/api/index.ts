@@ -68,6 +68,43 @@ function generateReferralCode(): string {
   return code;
 }
 
+// Audit logging helper
+async function logAudit(
+  db: D1Database,
+  userId: string,
+  action: string,
+  details?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await db
+      .prepare("INSERT INTO audit_log (user_id, action, details) VALUES (?, ?, ?)")
+      .bind(userId, action, details ? JSON.stringify(details) : null)
+      .run();
+  } catch (err) {
+    console.error("[Audit] Failed to log audit entry:", err);
+  }
+}
+
+// Helper to create a free subscription (used by both registration paths)
+async function createFreeSubscription(db: D1Database, userId: string): Promise<void> {
+  try {
+    await db
+      .prepare(
+        "INSERT INTO subscriptions (id, user_id, tier, period_start, period_end) VALUES (?, ?, ?, ?, ?)",
+      )
+      .bind(
+        generateId(),
+        userId,
+        "free",
+        new Date().toISOString(),
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+      .run();
+  } catch (err) {
+    console.error("[Subscription] Failed to create free subscription for user:", userId, err);
+  }
+}
+
 // Tier configuration - must match engine/revenue-service.ts
 const TIERS: Record<string, { platformFeeRate: number }> = {
   free: { platformFeeRate: 0 },
@@ -92,6 +129,8 @@ const registerHandler = (db: D1Database) =>
         .bind(keyHash, userId)
         .run(),
     );
+
+    yield* Effect.promise(() => createFreeSubscription(db, userId));
 
     return { userId, apiKey };
   });
@@ -206,6 +245,8 @@ const registerTelegramHandler = (db: D1Database, telegramId: string, firstName: 
         .run(),
     );
 
+    yield* Effect.promise(() => createFreeSubscription(db, userId));
+
     return { user_id: userId, api_key: apiKey, first_name: firstName };
   });
 
@@ -275,6 +316,8 @@ app.post("/v1/register", async (c) => {
         .run();
     }
 
+    await logAudit(DB, result.userId, "register", { tier: "free" });
+
     return c.json({
       user_id: result.userId,
       api_key: result.apiKey,
@@ -295,6 +338,7 @@ app.post("/v1/login", async (c) => {
 
   try {
     const result = await Effect.runPromise(loginHandler(DB, apiKey));
+    await logAudit(DB, (result as { id: string }).id, "login");
     return c.json(result);
   } catch {
     return c.json({ error: "Invalid API key" }, 401);
@@ -398,6 +442,10 @@ app.post("/v1/link-telegram/confirm", async (c) => {
       .bind(body.telegram_id, codeResult?.user_id)
       .run();
 
+    await logAudit(DB, codeResult?.user_id as string, "telegram_link", {
+      telegram_id: body.telegram_id,
+    });
+
     return c.json({ success: true, user_id: codeResult?.user_id });
   } catch {
     return c.json({ error: "Linking failed" }, 500);
@@ -457,6 +505,7 @@ app.post("/v1/register-telegram", async (c) => {
       registerTelegramHandler(DB, body.telegram_id, body.first_name ?? ""),
     );
     await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
+    await logAudit(DB, result.user_id, "register", { tier: "free", source: "telegram" });
     return c.json({
       user_id: result.user_id,
       api_key: result.api_key,
@@ -631,12 +680,16 @@ app.post("/v1/errors/batch", async (c) => {
   const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
 
   const body = (await c.req.json().catch(() => ({}))) as {
+    app?: string;
+    version?: string;
     reports?: Array<{
       id?: string;
       agentId?: string;
       errorType?: string;
+      category?: string;
       message?: string;
       stackTrace?: string;
+      stack?: string;
       prismVersion?: string;
       platform?: string;
       severity?: string;
@@ -665,7 +718,8 @@ app.post("/v1/errors/batch", async (c) => {
     await CACHE.put(rateKey, String(count + 1), { expirationTtl: 3600 });
   }
 
-  // Validate all reports
+  // Validate all reports — accept both engine format (category, stack, version top-level)
+  // and direct API format (errorType, stackTrace, prismVersion per-report)
   const validReports: Array<{
     id: string;
     agentId: string;
@@ -679,10 +733,15 @@ app.post("/v1/errors/batch", async (c) => {
   }> = [];
 
   for (const r of reports) {
-    if (!r.id || !r.agentId || !r.errorType || !r.message || !r.prismVersion) {
+    const errorType = r.errorType ?? r.category;
+    const prismVersion = r.prismVersion ?? body.version ?? "unknown";
+    const stackTrace = r.stackTrace ?? r.stack ?? null;
+    const agentId = r.agentId ?? "engine";
+
+    if (!r.id || !errorType || !r.message || !prismVersion) {
       return c.json(
         {
-          error: "Each report requires id, agentId, errorType, message, prismVersion",
+          error: "Each report requires id, message, and either errorType/category with prismVersion/version",
           reportId: r.id ?? "(missing id)",
         },
         400,
@@ -699,11 +758,11 @@ app.post("/v1/errors/batch", async (c) => {
     }
     validReports.push({
       id: r.id,
-      agentId: r.agentId,
-      errorType: r.errorType,
+      agentId,
+      errorType,
       message: r.message,
-      prismVersion: r.prismVersion,
-      stackTrace: r.stackTrace ?? null,
+      prismVersion,
+      stackTrace,
       platform: r.platform ?? null,
       severity: r.severity ?? "error",
       isRecoverable: r.isRecoverable ? 1 : 0,
@@ -1065,6 +1124,26 @@ app.get("/v1/subscription/status", async (c) => {
 
     const tier = (userResult as { tier?: string })?.tier ?? "free";
 
+    // Backfill subscription if missing (for users created before this fix)
+    const subResult = await DB.prepare(
+      "SELECT id FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+      .bind(userId)
+      .first();
+    if (!subResult) {
+      await DB.prepare(
+        "INSERT OR IGNORE INTO subscriptions (id, user_id, tier, period_start, period_end) VALUES (?, ?, ?, ?, ?)",
+      )
+        .bind(
+          generateId(),
+          userId,
+          tier,
+          new Date().toISOString(),
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        )
+        .run();
+    }
+
     const countResult = await DB.prepare(
       "SELECT COUNT(*) as count FROM referrals WHERE referrer_user_id = ?",
     )
@@ -1205,6 +1284,78 @@ app.get("/v1/revenue", async (c) => {
     });
   } catch {
     return c.json({ error: "Failed to fetch revenue stats" }, 500);
+  }
+});
+
+// ── Wallet management ────────────────────────────────────────────────────
+
+app.post("/v1/wallet", async (c) => {
+  const { DB } = c.env;
+  const apiKey = c.get("apiKey") as string;
+
+  if (!apiKey) {
+    return c.json({ error: "API key required" }, 401);
+  }
+
+  const body = (await c.req.json().catch(() => ({}))) as { pubkey?: string };
+
+  if (!body.pubkey || typeof body.pubkey !== "string") {
+    return c.json({ error: "pubkey is required" }, 400);
+  }
+
+  // Validate Solana base58 format (32-44 chars)
+  if (!SOLANA_BASE58_RE.test(body.pubkey)) {
+    return c.json({ error: "Invalid Solana address (must be base58, 32-44 chars)" }, 400);
+  }
+
+  try {
+    const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
+    const userId = (loginResult as { id: string }).id;
+
+    await DB.batch([
+      DB.prepare("DELETE FROM wallets WHERE user_id = ?").bind(userId),
+      DB.prepare("INSERT INTO wallets (id, user_id, pubkey) VALUES (?, ?, ?)").bind(generateId(), userId, body.pubkey),
+    ]);
+
+    await logAudit(DB, userId, "wallet_sync", { pubkey: body.pubkey });
+
+    return c.json({ success: true, pubkey: body.pubkey });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Invalid API key") || message.includes("User not found")) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    return c.json({ error: "Failed to store wallet" }, 500);
+  }
+});
+
+app.get("/v1/wallet", async (c) => {
+  const { DB } = c.env;
+  const apiKey = c.get("apiKey") as string;
+
+  if (!apiKey) {
+    return c.json({ error: "API key required" }, 401);
+  }
+
+  try {
+    const loginResult = await Effect.runPromise(loginHandler(DB, apiKey));
+    const userId = (loginResult as { id: string }).id;
+
+    const result = await DB.prepare("SELECT pubkey FROM wallets WHERE user_id = ?")
+      .bind(userId)
+      .first();
+
+    if (!result) {
+      return c.json({ error: "No wallet found" }, 404);
+    }
+
+    return c.json({ pubkey: result.pubkey });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Invalid API key") || message.includes("User not found")) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    return c.json({ error: "Failed to fetch wallet" }, 500);
   }
 });
 
