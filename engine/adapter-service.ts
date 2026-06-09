@@ -133,10 +133,10 @@ export const AdapterLive = Layer.effect(
     if (config.walletPrivateKey) {
       try {
         wallet = Keypair.fromSecretKey(bs58.decode(config.walletPrivateKey));
-  } catch (err) {
-    logger.error("Failed to load wallet", err);
-    wallet = null;
-  }
+      } catch (err) {
+        logger.error("Failed to load wallet", err);
+        wallet = null;
+      }
     }
 
     // ─── Fee wallet address (cached) ────────────────────────────────────────
