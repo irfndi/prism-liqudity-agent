@@ -876,6 +876,10 @@ export const AdapterLive = Layer.effect(
               operatorWalletAddress,
             );
             let feeTransferTxSignature: string | undefined;
+            let actualPlatformFeeX = 0;
+            let actualPlatformFeeY = 0;
+            let actualOperatorFeeX = 0;
+            let actualOperatorFeeY = 0;
 
             if (revenueShare.platformFeeX > 0 || revenueShare.platformFeeY > 0) {
               if (revenueShare.isCircular) {
@@ -958,7 +962,13 @@ export const AdapterLive = Layer.effect(
                     return Effect.succeed(undefined);
                   }),
                 );
-                feeTransferTxSignature = transferResult;
+                if (transferResult !== undefined) {
+                  feeTransferTxSignature = transferResult;
+                  actualPlatformFeeX = revenueShare.amountToTransferX;
+                  actualPlatformFeeY = revenueShare.amountToTransferY;
+                  actualOperatorFeeX = revenueShare.operatorFeeX;
+                  actualOperatorFeeY = revenueShare.operatorFeeY;
+                }
               } else {
                 logger.warn("No fee wallet configured — skipping platform fee transfer", {
                   pool: poolAddress,
@@ -970,13 +980,13 @@ export const AdapterLive = Layer.effect(
               txSignature: lastSignature,
               feeX,
               feeY,
-              platformFeeX: revenueShare.platformFeeX,
-              platformFeeY: revenueShare.platformFeeY,
+              platformFeeX: actualPlatformFeeX,
+              platformFeeY: actualPlatformFeeY,
               netFeeX: revenueShare.netFeeX,
               netFeeY: revenueShare.netFeeY,
               ...(feeTransferTxSignature !== undefined ? { feeTransferTxSignature } : {}),
-              ...(revenueShare.operatorFeeX > 0 || revenueShare.operatorFeeY > 0
-                ? { operatorFeeX: revenueShare.operatorFeeX, operatorFeeY: revenueShare.operatorFeeY }
+              ...(actualOperatorFeeX > 0 || actualOperatorFeeY > 0
+                ? { operatorFeeX: actualOperatorFeeX, operatorFeeY: actualOperatorFeeY }
                 : {}),
             };
           } catch (err) {
