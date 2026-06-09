@@ -53,11 +53,12 @@ export function checkForAutoUpdate(
       yield* db.setMetadata("versionInstalledAt", versionInstalledAt);
     }
 
-    const installedAtMs = Number(versionInstalledAt);
+    let installedAtMs = Number(versionInstalledAt);
     if (!Number.isFinite(installedAtMs) || installedAtMs <= 0) {
       log.warn("Invalid versionInstalledAt timestamp, resetting to now", { versionInstalledAt });
       versionInstalledAt = String(now);
       yield* db.setMetadata("versionInstalledAt", versionInstalledAt);
+      installedAtMs = now;
     }
 
     const currentVersion = getCurrentVersion();
