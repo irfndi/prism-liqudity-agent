@@ -206,30 +206,31 @@ describe("Error Reporting API", () => {
         `INSERT INTO error_logs (id, agent_id, error_type, message, stack_trace, prism_version, platform, severity, is_recoverable, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
+      const now = new Date();
       const seeds = [
         {
           id: "stat-1",
           errorType: "ONNX_BigInt",
           message: "err1",
-          createdAt: "2026-06-03T10:00:00",
+          createdAt: now.toISOString(),
         },
         {
           id: "stat-2",
           errorType: "ONNX_BigInt",
           message: "err2",
-          createdAt: "2026-06-03T10:01:00",
+          createdAt: now.toISOString(),
         },
         {
           id: "stat-3",
           errorType: "SQLite_Vec",
           message: "err3",
-          createdAt: "2026-06-03T10:02:00",
+          createdAt: now.toISOString(),
         },
         {
           id: "stat-4",
           errorType: "RPC_Timeout",
           message: "err4",
-          createdAt: "2026-06-03T09:00:00",
+          createdAt: now.toISOString(),
         },
       ];
       for (const s of seeds) {

@@ -60,6 +60,26 @@ describe("Install Telemetry API", () => {
       expect(response.status).toBe(200);
     });
 
+    it("stores user_id when provided", async () => {
+      const ctx = createExecutionContext();
+      const request = buildRequest("POST", "/v1/installs/ping", {
+        installId: "user-id-test-install-aaaa",
+        event: "setup",
+        userId: "user-xyz-456",
+      });
+      await worker.fetch(request, testEnv, ctx);
+
+      const rows = await env.DB.prepare(
+        "SELECT user_id FROM installs WHERE install_id = ?",
+      )
+        .bind("user-id-test-install-aaaa")
+        .all();
+      const results = rows.results ?? [];
+      expect(results).toHaveLength(1);
+      const row = results[0] as Record<string, unknown>;
+      expect(row.user_id).toBe("user-xyz-456");
+    });
+
     it("accepts all four valid events", async () => {
       const events = ["install", "setup", "dev_start", "register"];
       for (const event of events) {

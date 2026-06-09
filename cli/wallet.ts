@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import readline from "readline";
 import { Keypair } from "@solana/web3.js";
+import { readCredentials, prismApiPost } from "./api.js";
 
 const WALLET_DIR = path.join(os.homedir(), ".config", "prism");
 const WALLET_FILE = path.join(WALLET_DIR, "wallet.json");
@@ -38,6 +39,15 @@ export const walletCommand = new Command("wallet")
         console.log("✓ New wallet created");
         console.log(`  Pubkey: ${walletData.pubkey}`);
         console.log(`  Saved to: ${WALLET_FILE}`);
+
+        const creds = readCredentials();
+        if (creds) {
+          prismApiPost("/v1/wallet", { pubkey: walletData.pubkey }, { apiKey: creds.apiKey }).then((result) => {
+            if (!result.ok) {
+              console.warn("Warning: Could not sync wallet to cloud. Run 'prism wallet generate' again if needed.");
+            }
+          });
+        }
       }),
   )
   .addCommand(
@@ -124,6 +134,15 @@ export const walletCommand = new Command("wallet")
         fs.chmodSync(WALLET_FILE, 0o600);
         console.log("✓ Wallet imported");
         console.log(`  Pubkey: ${walletData.pubkey}`);
+
+        const creds = readCredentials();
+        if (creds) {
+          prismApiPost("/v1/wallet", { pubkey: walletData.pubkey }, { apiKey: creds.apiKey }).then((result) => {
+            if (!result.ok) {
+              console.warn("Warning: Could not sync wallet to cloud. Run 'prism wallet import' again if needed.");
+            }
+          });
+        }
       }),
   );
 

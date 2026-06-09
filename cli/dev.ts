@@ -13,10 +13,9 @@ export const devCommand = new Command("dev")
     "Execute live on-chain EXIT transactions even in paper mode (requires wallet — sends real transactions)",
     false,
   )
-  .action((options: DevCommandOptions) => {
-    pingInstall("dev_start");
-
+  .action(async (options: DevCommandOptions) => {
     const creds = readCredentials();
+
     if (!creds) {
       console.error("Error: Registration required to start the trading agent.");
       console.error("Run 'prism register' first to create an account.");
@@ -27,6 +26,8 @@ export const devCommand = new Command("dev")
       console.error("  - Platform fee processing");
       process.exit(1);
     }
+
+    await pingInstall("dev_start", { userId: creds.userId });
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
