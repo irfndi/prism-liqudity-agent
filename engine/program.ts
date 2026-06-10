@@ -887,32 +887,51 @@ export const program = Effect.gen(function* () {
             )
             .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-          if (
-            claimResult &&
-            (claimResult.platformFeeX > 0 ||
+          if (claimResult) {
+            yield* db
+              .saveFeeClaim({
+                id: randomUUID(),
+                poolAddress: decision.poolAddress,
+                positionPubkey: pos.positionPubKey,
+                feeX: claimResult.feeX,
+                feeY: claimResult.feeY,
+                platformFeeX: claimResult.platformFeeX,
+                platformFeeY: claimResult.platformFeeY,
+                netFeeX: claimResult.netFeeX,
+                netFeeY: claimResult.netFeeY,
+                txSignature: claimResult.txSignature,
+                feeTransferTxSignature: claimResult.feeTransferTxSignature ?? null,
+                reportedToApi: false,
+                createdAt: Date.now(),
+              })
+              .pipe(Effect.catchAll(() => Effect.void));
+
+            if (
+              claimResult.platformFeeX > 0 ||
               claimResult.platformFeeY > 0 ||
               (claimResult.operatorFeeX ?? 0) > 0 ||
-              (claimResult.operatorFeeY ?? 0) > 0)
-          ) {
-            adapter.reportFeeCollection({
-              poolAddress: decision.poolAddress,
-              positionPubkey: pos.positionPubKey,
-              feeX: claimResult.feeX,
-              feeY: claimResult.feeY,
-              platformFeeX: claimResult.platformFeeX,
-              platformFeeY: claimResult.platformFeeY,
-              tier,
-              txSignature: claimResult.txSignature,
-              ...(claimResult.feeTransferTxSignature != null && {
-                feeTransferTxSignature: claimResult.feeTransferTxSignature,
-              }),
-              ...(claimResult.operatorFeeX != null && {
-                operatorFeeX: claimResult.operatorFeeX,
-              }),
-              ...(claimResult.operatorFeeY != null && {
-                operatorFeeY: claimResult.operatorFeeY,
-              }),
-            });
+              (claimResult.operatorFeeY ?? 0) > 0
+            ) {
+              adapter.reportFeeCollection({
+                poolAddress: decision.poolAddress,
+                positionPubkey: pos.positionPubKey,
+                feeX: claimResult.feeX,
+                feeY: claimResult.feeY,
+                platformFeeX: claimResult.platformFeeX,
+                platformFeeY: claimResult.platformFeeY,
+                tier,
+                txSignature: claimResult.txSignature,
+                ...(claimResult.feeTransferTxSignature != null && {
+                  feeTransferTxSignature: claimResult.feeTransferTxSignature,
+                }),
+                ...(claimResult.operatorFeeX != null && {
+                  operatorFeeX: claimResult.operatorFeeX,
+                }),
+                ...(claimResult.operatorFeeY != null && {
+                  operatorFeeY: claimResult.operatorFeeY,
+                }),
+              });
+            }
           }
 
           const result = yield* adapter
@@ -1000,6 +1019,24 @@ export const program = Effect.gen(function* () {
           if (!result) {
             continue;
           }
+
+          yield* db
+            .saveFeeClaim({
+              id: randomUUID(),
+              poolAddress,
+              positionPubkey: pos.positionPubKey,
+              feeX: result.feeX,
+              feeY: result.feeY,
+              platformFeeX: result.platformFeeX,
+              platformFeeY: result.platformFeeY,
+              netFeeX: result.netFeeX,
+              netFeeY: result.netFeeY,
+              txSignature: result.txSignature,
+              feeTransferTxSignature: result.feeTransferTxSignature ?? null,
+              reportedToApi: false,
+              createdAt: Date.now(),
+            })
+            .pipe(Effect.catchAll(() => Effect.void));
 
           if (
             result.platformFeeX > 0 ||

@@ -1010,9 +1010,19 @@ export const AdapterLive = Layer.effect(
         void (async () => {
           try {
             const installId = getOrCreateInstallId();
+            let apiKey = "";
+            try {
+              const credsPath = path.join(os.homedir(), ".config", "prism", "credentials.json");
+              const creds = JSON.parse(fs.readFileSync(credsPath, "utf-8"));
+              apiKey = creds.apiKey ?? "";
+            } catch {
+              apiKey = "";
+            }
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
             const res = await fetch(`${FEE_WALLET_API_URL}/v1/revenue/log`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               body: JSON.stringify({ ...event, installId }),
             });
             if (!res.ok) logger.warn("Revenue report failed:", res.status);

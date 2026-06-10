@@ -910,7 +910,6 @@ app.get("/v1/config", async (c) => {
       tier,
       platformFeeRate: TIERS[tier]?.platformFeeRate ?? 0,
       revenueShareEnabled: true,
-      revenueShareOperatorPct: 0,
       feeWalletAddress,
       configVersion: 1,
     });
