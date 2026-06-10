@@ -109,7 +109,7 @@ export function calculateRevenueShare(
     netFeeX = feeX - platformFeeX;
     netFeeY = feeY - platformFeeY;
 
-    isCircular = feeWallet !== null && operatorWalletAddress === feeWallet;
+    isCircular = !!feeWallet && operatorWalletAddress === feeWallet;
 
     if (!isCircular && feeWallet) {
       amountToTransferX = platformFeeX - operatorFeeX;
@@ -988,8 +988,8 @@ export const AdapterLive = Layer.effect(
               feeY,
               platformFeeX: actualPlatformFeeX,
               platformFeeY: actualPlatformFeeY,
-              netFeeX: revenueShare.netFeeX,
-              netFeeY: revenueShare.netFeeY,
+              netFeeX: feeX - actualPlatformFeeX,
+              netFeeY: feeY - actualPlatformFeeY,
               ...(transferInstructions.length > 0 ? { feeTransferTxSignature: signature } : {}),
               ...(actualOperatorFeeX > 0 || actualOperatorFeeY > 0
                 ? { operatorFeeX: actualOperatorFeeX, operatorFeeY: actualOperatorFeeY }

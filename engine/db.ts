@@ -332,6 +332,14 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_fee_claims_created ON fee_claims(created_at)`);
     },
   },
+  {
+    version: 11,
+    name: "fee_claims_operator_fees",
+    up(db) {
+      db.exec(`ALTER TABLE fee_claims ADD COLUMN operator_fee_x REAL NOT NULL DEFAULT 0`);
+      db.exec(`ALTER TABLE fee_claims ADD COLUMN operator_fee_y REAL NOT NULL DEFAULT 0`);
+    },
+  },
 ];
 
 function runMigrations(db: Database) {

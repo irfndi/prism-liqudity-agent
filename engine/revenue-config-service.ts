@@ -23,6 +23,14 @@ const DEFAULT_CONFIG: RevenueConfig = {
   feeWalletAddress: "",
 };
 
+const FAIL_CLOSED_CONFIG: RevenueConfig = {
+  tier: "fund",
+  platformFeeRate: 0.10,
+  revenueShareEnabled: true,
+  revenueShareOperatorPct: 0,
+  feeWalletAddress: "",
+};
+
 interface CachedConfig {
   readonly config: RevenueConfig;
   readonly expiresAt: number;
@@ -110,7 +118,7 @@ function fetchWithRetry(apiKey: string): Effect.Effect<RevenueConfig, unknown> {
   });
 }
 
-function resolveConfig(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueConfig, unknown> {
+function resolveConfig(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueConfig, never> {
   return Effect.gen(function* () {
     if (cached && Date.now() < cached.expiresAt) {
       return cached.config;
@@ -141,12 +149,12 @@ function resolveConfig(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueC
       return DEFAULT_CONFIG;
     }
 
-    log.error("Live mode: refusing to start without revenue config");
-    return yield* Effect.fail(new Error("Failed to fetch revenue config after retries"));
+    log.error("Live mode: API unreachable, using fail-closed config with max fee rate");
+    return FAIL_CLOSED_CONFIG;
   });
 }
 
-function forceRefresh(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueConfig, unknown> {
+function forceRefresh(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueConfig, never> {
   return Effect.gen(function* () {
     cached = null;
 
@@ -172,7 +180,8 @@ function forceRefresh(db: DbApi, paperTrading: boolean): Effect.Effect<RevenueCo
       return DEFAULT_CONFIG;
     }
 
-    return yield* Effect.fail(new Error("Failed to refresh revenue config"));
+    log.error("Live mode: API unreachable on refresh, using fail-closed config with max fee rate");
+    return FAIL_CLOSED_CONFIG;
   });
 }
 
@@ -190,8 +199,8 @@ export const RevenueConfigServiceLive: Layer.Layer<
     const paperTrading = config.paperTrading;
 
     return {
-      getConfig: (): Effect.Effect<RevenueConfig, unknown> => resolveConfig(db, paperTrading),
-      refreshConfig: (): Effect.Effect<RevenueConfig, unknown> => forceRefresh(db, paperTrading),
+      getConfig: (): Effect.Effect<RevenueConfig, never> => resolveConfig(db, paperTrading),
+      refreshConfig: (): Effect.Effect<RevenueConfig, never> => forceRefresh(db, paperTrading),
     };
   }),
 );

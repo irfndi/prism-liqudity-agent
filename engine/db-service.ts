@@ -508,8 +508,9 @@ export const DbLive = (dbPath?: string) =>
               `INSERT INTO fee_claims (
                 id, pool_address, position_pubkey, fee_x, fee_y,
                 platform_fee_x, platform_fee_y, net_fee_x, net_fee_y,
+                operator_fee_x, operator_fee_y,
                 tx_signature, fee_transfer_tx_signature, reported_to_api, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               claim.id,
               claim.poolAddress,
               claim.positionPubkey,
@@ -519,6 +520,8 @@ export const DbLive = (dbPath?: string) =>
               claim.platformFeeY,
               claim.netFeeX,
               claim.netFeeY,
+              claim.operatorFeeX ?? 0,
+              claim.operatorFeeY ?? 0,
               claim.txSignature,
               claim.feeTransferTxSignature,
               claim.reportedToApi ? 1 : 0,

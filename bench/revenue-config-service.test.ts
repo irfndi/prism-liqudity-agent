@@ -124,22 +124,28 @@ describe("RevenueConfigService — paper mode fail-open", () => {
 // ─── Live mode: fail-closed ─────────────────────────────────────────────────
 
 describe("RevenueConfigService — live mode fail-closed", () => {
-  it("throws when API is unreachable and no DB cache exists", async () => {
+  it("returns fail-closed config with max fee rate when API is unreachable and no DB cache exists", async () => {
     globalThis.fetch = vi
       .fn()
       .mockRejectedValue(new Error("network error")) as unknown as typeof fetch;
     mockCredentialsFile();
     const layer = buildLayer({ paperTrading: false });
 
-    const program = Effect.provide(
-      Effect.gen(function* () {
-        const svc = yield* RevenueConfigService;
-        return yield* svc.getConfig();
-      }),
-      layer,
+    const result = await Effect.runPromise(
+      Effect.provide(
+        Effect.gen(function* () {
+          const svc = yield* RevenueConfigService;
+          return yield* svc.getConfig();
+        }),
+        layer,
+      ),
     );
 
-    await expect(Effect.runPromise(program)).rejects.toBeDefined();
+    expect(result.tier).toBe("fund");
+    expect(result.platformFeeRate).toBe(0.1);
+    expect(result.revenueShareEnabled).toBe(true);
+    expect(result.revenueShareOperatorPct).toBe(0);
+    expect(result.feeWalletAddress).toBe("");
   }, 15_000);
 });
 

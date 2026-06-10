@@ -868,13 +868,11 @@ export const program = Effect.gen(function* () {
       } else if (decision.action === "REBALANCE" && decision.rebalanceParams) {
         const pos = trackedPositions.get(decision.poolAddress);
         if (pos?.positionPubKey) {
-          const revenueConfigResult = yield* revenueConfigSvc
-            .getConfig()
-            .pipe(Effect.catchAll(() => Effect.succeed(null)));
-          const platformFeeRate = revenueConfigResult?.platformFeeRate ?? 0;
-          const revenueShareEnabled = revenueConfigResult?.revenueShareEnabled ?? false;
-          const revenueShareOperatorPct = revenueConfigResult?.revenueShareOperatorPct ?? 0;
-          const tier = revenueConfigResult?.tier ?? "free";
+          const revenueConfigResult = yield* revenueConfigSvc.getConfig();
+          const platformFeeRate = revenueConfigResult.platformFeeRate;
+          const revenueShareEnabled = revenueConfigResult.revenueShareEnabled;
+          const revenueShareOperatorPct = revenueConfigResult.revenueShareOperatorPct;
+          const tier = revenueConfigResult.tier;
 
           // Claim fees before rebalancing (with platform fee)
           const claimResult = yield* adapter
@@ -899,6 +897,8 @@ export const program = Effect.gen(function* () {
                 platformFeeY: claimResult.platformFeeY,
                 netFeeX: claimResult.netFeeX,
                 netFeeY: claimResult.netFeeY,
+                operatorFeeX: claimResult.operatorFeeX ?? 0,
+                operatorFeeY: claimResult.operatorFeeY ?? 0,
                 txSignature: claimResult.txSignature,
                 feeTransferTxSignature: claimResult.feeTransferTxSignature ?? null,
                 reportedToApi: false,
@@ -982,13 +982,11 @@ export const program = Effect.gen(function* () {
 
   const claimAllFees = (): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const revenueConfigResult = yield* revenueConfigSvc
-        .getConfig()
-        .pipe(Effect.catchAll(() => Effect.succeed(null)));
-      const platformFeeRate = revenueConfigResult?.platformFeeRate ?? 0;
-      const revenueShareEnabled = revenueConfigResult?.revenueShareEnabled ?? false;
-      const revenueShareOperatorPct = revenueConfigResult?.revenueShareOperatorPct ?? 0;
-      const tier = revenueConfigResult?.tier ?? "free";
+      const revenueConfigResult = yield* revenueConfigSvc.getConfig();
+      const platformFeeRate = revenueConfigResult.platformFeeRate;
+      const revenueShareEnabled = revenueConfigResult.revenueShareEnabled;
+      const revenueShareOperatorPct = revenueConfigResult.revenueShareOperatorPct;
+      const tier = revenueConfigResult.tier;
 
       for (const [poolAddress, pos] of trackedPositions) {
         if (pos.positionPubKey && Date.now() - pos.lastFeeClaimAt > config.feeClaimIntervalMs) {
@@ -1031,6 +1029,8 @@ export const program = Effect.gen(function* () {
               platformFeeY: result.platformFeeY,
               netFeeX: result.netFeeX,
               netFeeY: result.netFeeY,
+              operatorFeeX: result.operatorFeeX ?? 0,
+              operatorFeeY: result.operatorFeeY ?? 0,
               txSignature: result.txSignature,
               feeTransferTxSignature: result.feeTransferTxSignature ?? null,
               reportedToApi: false,

@@ -540,6 +540,8 @@ export interface DbApi {
     platformFeeY: number;
     netFeeX: number;
     netFeeY: number;
+    operatorFeeX?: number;
+    operatorFeeY?: number;
     txSignature: string | null;
     feeTransferTxSignature: string | null;
     reportedToApi: boolean;
@@ -668,8 +670,8 @@ export interface RevenueConfig {
 }
 
 export interface RevenueConfigApi {
-  readonly getConfig: () => Effect.Effect<RevenueConfig, unknown>;
-  readonly refreshConfig: () => Effect.Effect<RevenueConfig, unknown>;
+  readonly getConfig: () => Effect.Effect<RevenueConfig, never>;
+  readonly refreshConfig: () => Effect.Effect<RevenueConfig, never>;
 }
 
 export class RevenueConfigService extends Context.Tag("RevenueConfigService")<
