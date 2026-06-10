@@ -71,6 +71,12 @@ describe("Revenue Tracking API", () => {
       `ALTER TABLE revenue_events ADD COLUMN fee_transfer_tx_signature TEXT`,
     ).run().catch(() => {});
     await env.DB.prepare(
+      `ALTER TABLE revenue_events ADD COLUMN operator_fee_x REAL NOT NULL DEFAULT 0`,
+    ).run().catch(() => {});
+    await env.DB.prepare(
+      `ALTER TABLE revenue_events ADD COLUMN operator_fee_y REAL NOT NULL DEFAULT 0`,
+    ).run().catch(() => {});
+    await env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
